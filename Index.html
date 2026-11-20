@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eyeland Sales Performance</title>
+<style>
+:root{--red:#c8102e;--ink:#1d1d1f;--mut:#6b6b70;--line:#e4e4e8;--bg:#f6f6f8;--ok:#1a7f37;--warn:#b35c00}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.45}
+header{background:#fff;border-bottom:1px solid var(--line);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:5}
+header .brand{font-weight:800}
+header .brand span{color:var(--red)}
+main{padding:12px 12px 96px;max-width:780px;margin:0 auto}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;z-index:5}
+nav button{flex:1;border:0;background:none;padding:12px 2px;font-size:12px;color:var(--mut);cursor:pointer}
+nav button.on{color:var(--red);font-weight:700}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+h2{font-size:18px;margin:2px 0 10px}
+h3{font-size:15px;margin:0 0 6px}
+.btn{display:inline-block;border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px 12px;font-size:14px;margin:3px 4px 3px 0;cursor:pointer;color:var(--ink);font-family:inherit}
+.btn.on{background:var(--red);color:#fff;border-color:var(--red)}
+.btn.pri{background:var(--ink);color:#fff;border-color:var(--ink)}
+.btn.sm{padding:7px 10px;font-size:13px}
+.btn.del{color:var(--red)}
+input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;font-size:15px;margin:4px 0 10px;font-family:inherit;background:#fff}
+textarea{min-height:110px}
+label{font-size:13px;color:var(--mut);display:block}
+.mut{color:var(--mut);font-size:13px}
+.tag{display:inline-block;background:#f0f0f3;border-radius:6px;padding:2px 7px;font-size:12px;margin:2px 3px 2px 0}
+.tag.no{background:#fde8eb;color:var(--red)}
+.price{font-weight:800;font-size:18px}
+.reason{border-left:3px solid var(--red);padding:6px 10px;margin:8px 0;background:#fff7f8;border-radius:0 8px 8px 0}
+.say{background:#f1f8f3;border-left:3px solid var(--ok);padding:8px 10px;margin:8px 0;border-radius:0 8px 8px 0}
+.note{background:#fff8ec;border-left:3px solid var(--warn);padding:8px 10px;margin:8px 0;border-radius:0 8px 8px 0}
+.tier{border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0}
+.tier.rec{border:2px solid var(--red)}
+.kpi{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.kpi div{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px}
+.kpi b{display:block;font-size:20px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{padding:7px 4px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.barw{background:#f0f0f3;border-radius:4px;height:8px;margin-top:3px}
+.bar{height:8px;background:var(--red);border-radius:4px}
+.warn{color:var(--warn)}
+.ok{color:var(--ok)}
+.bad{color:var(--red)}
+.row{display:flex;gap:8px}
+.row>*{flex:1}
+.sec{margin:14px 0 4px;font-weight:700}
+#login{max-width:360px;margin:60px auto;padding:0 16px}
+.hide{display:none}
+</style>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+<div id="login" class="hide">
+  <div class="card">
+    <h2>Eyeland <span style="color:#c8102e">Sales Performance</span></h2>
+    <label>Email</label><input id="lemail" type="email" autocomplete="username">
+    <label>Password</label><input id="lpass" type="password" autocomplete="current-password">
+    <button class="btn pri" onclick="doLogin()">Sign in</button>
+    <div id="lerr" class="bad" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<div id="app" class="hide">
+  <header>
+    <div class="brand">Eyeland <span>Sales Performance</span></div>
+    <button class="btn sm" onclick="auth.signOut()">Sign out</button>
+  </header>
+  <main id="view"></main>
+  <nav id="nav"></nav>
+</div>
+
+<script>
+/* ===== Firebase ===== */
+var firebaseConfig = {
+  apiKey: "AIzaSyDyaJYJQqQpQlJMI_VlJgecwdbRxudgGbo",
+  authDomain: "optistock-a73d9.firebaseapp.com",
+  projectId: "optistock-a73d9",
+  storageBucket: "optistock-a73d9.firebasestorage.app",
+  messagingSenderId: "395723657948",
+  appId: "1:395723657948:web:2ea6efeeed2a581de41a19"
+};
+firebase.initializeApp(firebaseConfig);
+var auth = firebase.auth();
+var db = firebase.firestore();
+db.enablePersistence({synchronizeTabs: true}).catch(function(){});
+
+/* ===== State ===== */
+var USER = null;
+var CFG = null;
+var TAB = 'target';
+var MONTH = '';
+var SUB = 'guide';
+var ANS = {};
+var LOGF = null;
+var PERIOD = 'last15';
+var EDIT = null;
+
+/* ===== Helpers ===== */
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function rs(n){ return '₹' + Number(n || 0).toLocaleString('en-IN'); }
+function pad(n){ return (n < 10 ? '0' : '') + n; }
+function dstr(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+function today(){ return dstr(new Date()); }
+function addDays(s, n){ var p = s.split('-'); var d = new Date(+p[0], +p[1] - 1, +p[2]); d.setDate(d.getDate() + n); return dstr(d); }
+function daysAgo(s){ var p = s.split('-'); var d = new Date(+p[0], +p[1] - 1, +p[2]); return Math.round((new Date().setHours(0,0,0,0) - d.getTime()) / 86400000); }
+function pct(a, b){ return b ? Math.round(a * 100 / b) : 0; }
+function isOwner(){ return !!(CFG && USER && CFG.ownerEmail && USER.email && USER.email.toLowerCase() === CFG.ownerEmail.toLowerCase()); }
+function fname(k){ return (CFG.features[k] && CFG.features[k].n) || k; }
+function fben(k){ return (CFG.features[k] && CFG.features[k].b) || ''; }
+function copyText(t){
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(function(){ alert('Copied. Paste it into Claude for the 15-day review.'); }, function(){ fallbackCopy(t); });
+  } else { fallbackCopy(t); }
+}
+function fallbackCopy(t){ var a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select(); try { document.execCommand('copy'); alert('Copied.'); } catch (e) { alert('Copy failed. Select the text manually.'); } document.body.removeChild(a); }
+
+/* ===== Seed data (from the shop rate cards, Nov 2026) ===== */
+function seed(email){
+  var A4 = ['scratch','arc','blue','spf','water'];
+  var A5 = A4.concat(['hd','smudge','dust']);
+  var B2 = ['scratch','arc','blue','spf','water'];
+  var B3 = B2.concat(['dust']);
+  var B4 = B3.concat(['hd','smudge']);
+  var P4 = ['scratch','blue','arc','spf','smooth','water','adapt'];
+  var P5 = P4.concat(['dust','smudge']);
+  return {
+    ownerEmail: email,
+    updated: today(),
+    staff: ['Rahul','Staff A','Staff B'],
+    targets: {},
+    features: {
+      scratch:{n:'Scratch resist', b:'Roz ki rough use mein bhi lens jaldi kharab nahi hota.'},
+      arc:{n:'Anti-glare', b:'Light ki chamak aur reflection kam, aaram se saaf dikhta hai.'},
+      blue:{n:'Blue cut', b:'Phone/laptop pe lambe time ke baad bhi aankhein kam thakti hain.'},
+      water:{n:'Repels water', b:'Baarish ya paani ke daag nahi tikte, lens jaldi saaf hota hai.'},
+      spf:{n:'SPF (UV protection)', b:'Dhoop ki UV rays se aankhon ki suraksha.'},
+      dust:{n:'Repels dust', b:'Dhool kam chipakti hai, baar baar saaf nahi karna padta.'},
+      smudge:{n:'Resists smudge', b:'Ungliyon ke nishaan kam padte hain, lens saaf rehta hai.'},
+      hd:{n:'Digital HD', b:'Zyada sharp aur clear vision, screen pe bhi aur door bhi.'},
+      aspheric:{n:'Double aspheric', b:'Lens ke kinaaron tak saaf vision, lens flat aur patla dikhta hai.'},
+      drive:{n:'Clear Drive', b:'Raat ko headlights ki chamak kam, driving zyada safe.'},
+      shatter:{n:'Shatterproof', b:'Girne ya chot lagne pe tootta nahi. Bachchon aur sports ke liye safe.'},
+      sunprotect:{n:'Sun Protect', b:'Dhoop mein aankhon ko aaram aur protection.'},
+      photogrey:{n:'Photogrey', b:'Dhoop mein khud dark, andar clear. Ek chashma, do kaam.'},
+      smooth:{n:'Smooth power transition', b:'Door se paas dekhne mein jhatka nahi, nazar smooth shift hoti hai.'},
+      crack:{n:'Crack resistant', b:'Daily heavy use mein bhi lens crack nahi hota.'},
+      adapt:{n:'Adaptation warranty', b:'Progressive adjust karne mein dikkat ho to adaptation warranty cover karti hai.'},
+      thin:{n:'Thinner lens', b:'Patla aur halka lens. Chashma bhaari nahi lagta, mota glass nahi dikhta.'},
+      corridor:{n:'Wider corridor', b:'Reading aur computer ke liye bada clear area, kam sar ghumana, jaldi adjust.'}
+    },
+    sv: [
+      {id:'A1', card:'A', name:'Basic', price:1700, priceAtt:null, f:['scratch'], thin:0, war:'6 months', best:'Very tight budget, light use'},
+      {id:'A2', card:'A', name:'Anti-glare', price:2200, priceAtt:2790, f:['scratch','arc'], thin:0, war:'8 months', best:'Light screen use, wants anti-glare'},
+      {id:'A3', card:'A', name:'Blue cut', price:2700, priceAtt:2990, f:['scratch','arc','blue'], thin:15, war:'1 year', best:'Phone/laptop 2+ hrs a day: students, office'},
+      {id:'A4', card:'A', name:'Blue cut + UV', price:3200, priceAtt:3490, f:A4, thin:15, war:'1 year', best:'Screens + outdoors, daytime riders'},
+      {id:'A5', card:'A', name:'Digital HD', price:3700, priceAtt:3890, f:A5, thin:20, war:'1 year', best:'6+ hrs on screens, wants sharpest view and easy-clean lens'},
+      {id:'A6', card:'A', name:'Drive Premium', price:4200, priceAtt:4390, f:A5.concat(['aspheric','drive']), thin:20, war:'1 year', best:'Night drivers; best lens on Card A'},
+      {id:'A7', card:'A', name:'Shatterproof', price:3200, priceAtt:null, f:['scratch','arc','blue','spf','shatter'], thin:20, war:'1 year', best:'Kids, sports, active lifestyle'},
+      {id:'B1', card:'B', name:'Sun Protect', price:3200, priceAtt:null, f:['scratch','arc','spf','water','sunprotect'], thin:15, war:'1 year', best:'Outdoor people, low screen use (no blue cut)'},
+      {id:'B2', card:'B', name:'Thin 35', price:4900, priceAtt:4990, f:B2, thin:35, war:'1 year', best:'Thick or heavy current lenses; wants thin + blue cut'},
+      {id:'B3', card:'B', name:'Thin 35 Dust-free', price:5600, priceAtt:5790, f:B3, thin:35, war:'1 year', best:'Thin lens + dusty or outdoor work'},
+      {id:'B4', card:'B', name:'Thin 35 HD', price:6300, priceAtt:6590, f:B4, thin:35, war:'1 year', best:'Thin lens + heavy screen use'},
+      {id:'B5', card:'B', name:'Thin 40 HD', price:7200, priceAtt:7390, f:B4, thin:40, war:'1 year', best:'Higher power, wants even thinner'},
+      {id:'B6', card:'B', name:'Thin 45 Drive', price:9200, priceAtt:9490, f:B4.concat(['drive']), thin:45, war:'1 year', best:'High power + night driving'},
+      {id:'B7', card:'B', name:'Thin 45 Premium', price:10200, priceAtt:10590, f:B4.concat(['drive','aspheric']), thin:45, war:'1 year', best:'Highest power; thinnest lens, best edge clarity'}
+    ],
+    prog: [
+      {id:'P1', name:'Normal', p1:3000, p2:4000, f:['scratch','blue','adapt'], thin:0, cor:1, attRemove:['blue'], best:'First progressive, tight budget'},
+      {id:'P2', name:'Normal + Anti-glare', p1:4000, p2:5000, f:['scratch','blue','arc','adapt'], thin:0, cor:1, attRemove:['blue'], best:'Office/home use, wants anti-glare'},
+      {id:'P3', name:'Wide', p1:5000, p2:6000, f:['scratch','blue','arc','spf','smooth','photogrey','adapt'], thin:10, cor:2, attRemove:['photogrey'], best:'Wider clear area, smooth switching'},
+      {id:'P4', name:'Wide Plus', p1:6500, p2:7500, f:['scratch','blue','arc','spf','smooth','photogrey','water','adapt'], thin:10, cor:2, attRemove:['photogrey'], best:'Wide corridor + outdoors'},
+      {id:'P5', name:'Power Frame', p1:8500, p2:9500, f:P5, thin:10, cor:3, attRemove:[], best:'Easy-care lens, active people'},
+      {id:'P6', name:'Power Frame Plus', p1:10500, p2:11500, f:P5.concat(['crack']), thin:21, cor:3, attRemove:[], best:'Thinner, crack resistant, daily heavy use'},
+      {id:'P7', name:'Wide Precal', p1:13000, p2:14000, f:P5.concat(['crack']), thin:21, cor:4, attRemove:[], best:'Computer + reading all day'},
+      {id:'P8', name:'Wide Precal Max', p1:15500, p2:16500, f:P5.concat(['crack']), thin:21, cor:5, attRemove:[], best:'Easiest adaptation; premium buyer'}
+    ],
+    corridors: ['','Standard','Wide','Wider','Extra wide','Widest'],
+    addons: [
+      {id:'night', n:'Night Vision', p:1600},
+      {id:'bprot', n:'Blue Protect', p:1600},
+      {id:'photo', n:'Photogrey', p:2600}
+    ],
+    rules: [
+      'Any generic frame from the offer section is included. Frame price does not matter.',
+      'The card price is the final price: no fitting charge, no hidden cost.',
+      'Same price for any power, including cylinder above -2.',
+      'Single vision and bifocal: Buy One Get One (2 pairs in the price).',
+      'Progressive: second pair is only +₹1,000.',
+      'Bifocal uses the single vision attachment-frame prices.',
+      'Not valid on branded frames (e.g. Titan).',
+      'Prices are fixed. No discounts.',
+      'Add-ons are extra: Night Vision ₹1,600, Blue Protect ₹1,600, Photogrey ₹2,600.'
+    ],
+    objections: [
+      {q:'Lenskart sasta hai', a:'Final price compare kijiye. Humare yahan frame + lens + fitting sab isi price mein hai, koi hidden charge nahi, power kitni bhi ho. Aankh ki jaanch Master Optometrist karte hain, fitting yahin hoti hai, baad ki service bhi yahin. (Lenskart tab se Gold price dikhaiye.)'},
+      {q:'Mehnga hai', a:'Discount nahi. Ek tier neeche dikhaiye aur saaf bataiye isme kya nahi milega: "Ye bhi achha hai, bas isme ___ nahi hai." Customer khud decide kare.'},
+      {q:'Sochke batata hoon', a:'Bilkul. Unki zaroorat aur suggested lens ek baar dohraiye. Poochhiye: "Koi ek baat jo abhi clear kar doon?" Number lekar 2 din mein follow-up. Log mein "Will come back" chuniye.'},
+      {q:'Online le lunga', a:'Progressive aur high power mein measurement aur fitting sabse zaroori hai. Yahan aapke chehre aur frame pe naap ke banate hain, aur adjust na ho to yahin theek karte hain.'},
+      {q:'Sabse sasta dikhao', a:'Sabse sasta dikhaiye. Phir ek sawaal: "Screen pe kitna time?" Jawab ke hisaab se sirf ek upgrade ka fayda bataiye. Zabardasti nahi.'}
+    ]
+  };
+}
+
+var LOST = ['Price','Lenskart / online','Did not like frames','Will come back','Only checking prices','Family to decide','Other'];
+var CATS = {sv:'Single vision', bif:'Bifocal', prog:'Progressive', enq:'Just enquiry'};
+var SOURCES = ['Walked past','Old customer','Referral','Instagram reel/post','Meta ad','Google','Other'];
+var FU_REASONS = ['Will come back','Family to decide','Price','Lenskart / online','Only checking prices'];
+
+/* ===== Auth ===== */
+function friendlyErr(e){
+  var c = (e && e.code) || '';
+  if (c.indexOf('invalid') > -1 || c.indexOf('wrong-password') > -1 || c.indexOf('user-not-found') > -1) return 'Wrong email or password.';
+  if (c.indexOf('too-many') > -1) return 'Too many tries. Wait a few minutes.';
+  if (c.indexOf('network') > -1) return 'No internet connection.';
+  return (e && e.message) || 'Sign-in failed.';
+}
+function doLogin(){
+  $('lerr').textContent = '';
+  auth.signInWithEmailAndPassword($('lemail').value.trim(), $('lpass').value).catch(function(err){ $('lerr').textContent = friendlyErr(err); });
+}
+$('lpass').addEventListener('keydown', function(e){ if (e.key === 'Enter') doLogin(); });
+
+auth.onAuthStateChanged(function(u){
+  USER = u;
+  if (!u) { $('app').className = 'hide'; $('login').className = ''; return; }
+  $('login').className = 'hide'; $('app').className = '';
+  $('view').innerHTML = '<div class="card mut">Loading…</div>';
+  loadCfg();
+});
+
+function loadCfg(){
+  db.collection('sales_config').doc('main').get().then(function(doc){
+    if (doc.exists) { CFG = doc.data(); render(); return; }
+    CFG = seed(USER.email);
+    return db.collection('sales_config').doc('main').set(CFG).then(function(){ render(); });
+  }).catch(function(err){
+    $('view').innerHTML = '<div class="card bad">Could not load settings: ' + esc(err.message) + '</div>';
+  });
+}
+
+function saveCfg(note){
+  CFG.updated = today();
+  return db.collection('sales_config').doc('main').set(CFG).then(function(){
+    if (note) {
+      return db.collection('sales_changes').add({date: today(), type: 'Price list', what: note, why: '', outcome: '', ts: Date.now(), by: USER.email});
+    }
+  }).catch(function(err){ alert('Save failed: ' + err.message); });
+}
+
+/* ===== Render shell ===== */
+var TABS = [['target','Target'],['log','Log'],['report','Review'],['coach','Coach'],['prices','Prices'],['lk','Lenskart']];
+function go(t){ TAB = t; EDIT = null; render(); window.scrollTo(0,0); }
+function render(){
+  var h = '';
+  for (var i = 0; i < TABS.length; i++) {
+    h += '<button class="' + (TAB === TABS[i][0] ? 'on' : '') + '" onclick="go(\'' + TABS[i][0] + '\')">' + TABS[i][1] + '</button>';
+  }
+  $('nav').innerHTML = h;
+  if (TAB === 'target') renderTarget();
+  else if (TAB === 'coach') renderCoach();
+  else if (TAB === 'log') renderLog();
+  else if (TAB === 'report') renderReport();
+  else if (TAB === 'prices') renderPrices();
+  else renderLk();
+}
+
+/* ===== Pricing logic ===== */
+function tiersFor(cat){
+  if (cat === 'prog') return CFG.prog.slice();
+  if (cat === 'bif') return CFG.sv.filter(function(t){ return t.priceAtt != null; });
+  return CFG.sv.slice();
+}
+function featsOf(t, cat, frame){
+  if (cat === 'prog' && frame === 'att' && t.attRemove) {
+    return t.f.filter(function(k){ return t.attRemove.indexOf(k) < 0; });
+  }
+  return t.f;
+}
+function priceOf(t, cat, frame, pairs){
+  if (cat === 'prog') return pairs === 1 ? t.p1 : t.p2;
+  if (cat === 'bif') return t.priceAtt;
+  return frame === 'att' ? t.priceAtt : t.price;
+}
+function priceLabel(t, cat, frame){
+  if (cat === 'prog') return rs(t.p1) + ' for 1 · ' + rs(t.p2) + ' for 2';
+  var p = priceOf(t, cat, frame, 2);
+  return p == null ? 'Not available' : rs(p) + ' (2 pairs)';
+}
+function findTier(id){
+  var all = CFG.sv.concat(CFG.prog);
+  for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i];
+  return null;
+}
+
+/* ===== Coach: questions ===== */
+var QS = [
+  {id:'need', q:'What do they need glasses for?', say:'Aapko door ke liye chahiye, paas ke liye, ya dono?', o:[['dist','Distance / one power'],['read','Reading only'],['both','Both far and near (40+)']]},
+  {id:'line', q:'Okay with a visible line in the lens?', say:'Bifocal mein lens pe line dikhti hai. Progressive mein line nahi hoti, aur beech ki doori bhi saaf dikhti hai.', o:[['noline','No line → Progressive'],['line','Line is fine → Bifocal']], when:function(){ return ANS.need === 'both'; }},
+  {id:'screen', q:'Screen time per day?', say:'Din mein phone ya laptop kitne ghante chalate ho?', o:[['s0','Under 2 hrs'],['s2','2–6 hrs'],['s6','6+ hrs']]},
+  {id:'drive', q:'Drive or ride at night?', say:'Raat ko gaadi ya bike chalate ho?', o:[['y','Yes'],['n','No']]},
+  {id:'sun', q:'Out in the sun a lot?', say:'Dhoop mein zyada rehna hota hai? Bike pe travel?', o:[['y','Yes'],['n','No']]},
+  {id:'thick', q:'Do their current glasses feel thick or heavy?', say:'Abhi wala chashma mota ya bhaari lagta hai?', o:[['y','Yes'],['n','No / first glasses']]},
+  {id:'env', q:'Where will they mostly wear them?', say:'Kaam zyada office/ghar mein hai ya bahar field mein?', o:[['normal','Office / home'],['dust','Outdoor / dusty / field'],['kid','Child or sports']]},
+  {id:'spend', q:'What did they pay for their last pair?', say:'Pichhli baar chashma kitne ka banwaya tha? (Budget seedha mat poochho.)', o:[['b1','Under ₹2,000'],['b2','₹2,000–5,000'],['b3','₹5,000+'],['b0','First glasses / not sure']]}
+];
+function setAns(id, v){
+  ANS[id] = v;
+  if (id === 'need' && v !== 'both') delete ANS.line;
+  render();
+}
+function catFromAns(){ if (ANS.need === 'both') return ANS.line === 'line' ? 'bif' : 'prog'; return 'sv'; }
+
+function reqFromAns(cat){
+  var r = {feats:['scratch'], thin:0, reasons:[], addons:[]};
+  function add(said, fs){
+    r.reasons.push({said:said, feats:fs});
+    for (var i = 0; i < fs.length; i++) {
+      if (fs[i] !== 'thin' && r.feats.indexOf(fs[i]) < 0) r.feats.push(fs[i]);
+    }
+  }
+  if (ANS.screen === 's2') add('Screens 2–6 hours a day', ['blue','arc']);
+  if (ANS.screen === 's6') {
+    add('Screens 6+ hours a day', cat === 'prog' ? ['blue','arc'] : ['blue','arc','hd']);
+    if (cat === 'prog') r.addons.push('bprot');
+  }
+  if (ANS.drive === 'y') {
+    add('Drives or rides at night', cat === 'prog' ? ['arc'] : ['arc','drive']);
+    if (cat === 'prog') r.addons.push('night');
+  }
+  if (ANS.sun === 'y') add('Out in the sun a lot', (cat === 'sv' && ANS.screen === 's0' && ANS.thick !== 'y') ? ['spf','sunprotect'] : ['spf']);
+  if (ANS.thick === 'y') { r.thin = cat === 'prog' ? 21 : 35; add('Current glasses feel thick or heavy', ['thin']); }
+  if (ANS.env === 'dust') add('Outdoor or dusty work', ['dust','water']);
+  if (ANS.env === 'kid') { if (cat === 'prog') add('Very active lifestyle', ['crack']); else add('For a child or sports', ['shatter']); }
+  return r;
+}
+
+function pick(cat, req, frame){
+  var list = tiersFor(cat).filter(function(t){
+    if (priceOf(t, cat, frame, 2) == null) return false;
+    if (t.f.indexOf('shatter') > -1 && req.feats.indexOf('shatter') < 0) return false;
+    if (t.f.indexOf('sunprotect') > -1 && req.feats.indexOf('sunprotect') < 0) return false;
+    return true;
+  });
+  list.sort(function(a, b){ return priceOf(a, cat, frame, 2) - priceOf(b, cat, frame, 2); });
+  function covers(t){
+    var fs = featsOf(t, cat, frame);
+    for (var i = 0; i < req.feats.length; i++) if (fs.indexOf(req.feats[i]) < 0) return false;
+    return (t.thin || 0) >= req.thin;
+  }
+  var m = list.filter(covers);
+  if (m.length) {
+    var up = null;
+    for (var i = 1; i < m.length; i++) {
+      if (cat === 'prog') { if (m[i].cor > m[0].cor || featsOf(m[i], cat, frame).length > featsOf(m[0], cat, frame).length) { up = m[i]; break; } }
+      else if (priceOf(m[i], cat, frame, 2) > priceOf(m[0], cat, frame, 2)) { up = m[i]; break; }
+    }
+    return {rec:m[0], up:up, missing:[]};
+  }
+  var best = null, bestScore = -1;
+  for (var j = 0; j < list.length; j++) {
+    var fs = featsOf(list[j], cat, frame), s = 0;
+    for (var k = 0; k < req.feats.length; k++) if (fs.indexOf(req.feats[k]) > -1) s++;
+    if ((list[j].thin || 0) >= req.thin) s++;
+    if (s > bestScore) { bestScore = s; best = list[j]; }
+  }
+  var miss = [];
+  if (best) {
+    var bf = featsOf(best, cat, frame);
+    for (var x = 0; x < req.feats.length; x++) if (bf.indexOf(req.feats[x]) < 0) miss.push(fname(req.feats[x]));
+    if ((best.thin || 0) < req.thin) miss.push('Thinner lens (' + req.thin + '%)');
+  }
+  return {rec:best, up:null, missing:miss};
+}
+
+function tierBox(t, cat, frame, label, rec){
+  if (!t) return '';
+  var fs = featsOf(t, cat, frame);
+  var h = '<div class="tier' + (rec ? ' rec' : '') + '"><div class="mut">' + esc(label) + '</div>';
+  h += '<h3>' + esc(t.name) + (cat === 'prog' ? ' · ' + esc(CFG.corridors[t.cor] || '') + ' corridor' : ' · Card ' + esc(t.card)) + '</h3>';
+  h += '<div class="price">' + priceLabel(t, cat, frame) + '</div><div>';
+  for (var i = 0; i < fs.length; i++) h += '<span class="tag">' + esc(fname(fs[i])) + '</span>';
+  if (t.thin) h += '<span class="tag">' + t.thin + '% thinner</span>';
+  if (t.war) h += '<span class="tag">Warranty ' + esc(t.war) + '</span>';
+  h += '</div></div>';
+  return h;
+}
+
+function resultHtml(){
+  var cat = catFromAns();
+  var req = reqFromAns(cat);
+  var frame = 'reg';
+  var p = pick(cat, req, frame);
+  var rec = p.rec, up = p.up;
+  var h = '<div class="card"><h2>Suggest: ' + esc(CATS[cat]) + '</h2>';
+  if (cat === 'bif') h += '<div class="mut">Bifocal uses the single vision attachment-frame prices.</div>';
+  if (ANS.spend === 'b3' && up) h += '<div class="note"><b>Show the Upgrade first.</b> They spent ₹5,000+ last time. Then show Recommended.</div>';
+  else if (ANS.spend === 'b1') h += '<div class="note">Low last spend. Show Recommended first. Mention the upgrade once, don\'t push.</div>';
+  h += tierBox(rec, cat, frame, 'RECOMMENDED', true);
+  if (p.missing.length) h += '<div class="note">No single lens covers everything. Missing: ' + esc(p.missing.join(', ')) + '. Explain this honestly.</div>';
+
+  h += '<div class="sec">Why this lens: say it like this</div>';
+  if (!req.reasons.length) h += '<div class="say">"Aapki zaroorat simple hai, ye lens roz ke use ke liye bilkul sahi hai."</div>';
+  for (var i = 0; i < req.reasons.length; i++) {
+    var r = req.reasons[i];
+    for (var j = 0; j < r.feats.length; j++) {
+      var fk = r.feats[j];
+      var nm = fk === 'thin' ? fname('thin') + ' (' + (rec ? rec.thin : req.thin) + '%)' : fname(fk);
+      h += '<div class="reason"><b>They said:</b> ' + esc(r.said) + ' → <b>' + esc(nm) + '</b><br>"' + esc(fben(fk)) + '"</div>';
+    }
+  }
+
+  if (up) {
+    var rf = featsOf(rec, cat, frame), uf = featsOf(up, cat, frame), extra = [];
+    for (var u = 0; u < uf.length; u++) if (rf.indexOf(uf[u]) < 0) extra.push(uf[u]);
+    var diff = priceOf(up, cat, frame, 2) - priceOf(rec, cat, frame, 2);
+    h += '<div class="sec">Upgrade: +' + rs(diff) + '</div>';
+    h += tierBox(up, cat, frame, 'UPGRADE', false);
+    for (var e = 0; e < extra.length; e++) h += '<div class="say"><b>' + esc(fname(extra[e])) + ':</b> "' + esc(fben(extra[e])) + '"</div>';
+    if ((up.thin || 0) > (rec.thin || 0)) h += '<div class="say"><b>' + up.thin + '% thinner:</b> "' + esc(fben('thin')) + '"</div>';
+    if (cat === 'prog' && up.cor > rec.cor) h += '<div class="say"><b>' + esc(CFG.corridors[up.cor]) + ' corridor:</b> "' + esc(fben('corridor')) + '"</div>';
+  }
+
+  h += '<div class="sec">Add more value</div>';
+  if (cat === 'prog') h += '<div class="say"><b>Second pair only +₹1,000:</b> "Ek spare ya office/car ke liye doosra pair, sirf ₹1,000 mein."</div>';
+  else h += '<div class="say"><b>Buy One Get One:</b> "Is price mein 2 pair milte hain. Ek roz ke liye, ek spare ya office ke liye."</div>';
+  if (ANS.sun === 'y') {
+    if (cat === 'prog') {
+      if (rec && rec.f.indexOf('photogrey') < 0) h += '<div class="say"><b>Photogrey add-on +' + rs(addonPrice('photo')) + ':</b> "' + esc(fben('photogrey')) + '"</div>';
+      h += '<div class="say"><b>Attachment frame (magnetic sun clip):</b> same price for progressive. "Dhoop mein clip lagao, sunglasses ban jaate hain."</div>';
+    } else if (cat === 'sv' && rec && rec.priceAtt != null) {
+      h += '<div class="say"><b>Attachment frame (magnetic sun clip): ' + rs(rec.priceAtt) + '</b> (+' + rs(rec.priceAtt - rec.price) + '). "Dhoop mein clip lagao, sunglasses ban jaate hain."</div>';
+    }
+  }
+  for (var a = 0; a < req.addons.length; a++) {
+    var ad = req.addons[a];
+    var txt = ad === 'bprot' ? 'Lens mein blue cut + upar se extra blue protect coating. Lambe screen time ke liye double protection.' : 'Raat ki driving ke liye extra clear vision.';
+    h += '<div class="say"><b>' + esc(addonName(ad)) + ' +' + rs(addonPrice(ad)) + ':</b> "' + esc(txt) + '"</div>';
+  }
+  h += '<div class="sec">Close</div><div class="say">"Aapki zaroorat ke hisaab se yahi sahi rahega. Is section se koi bhi frame chun lijiye. Price final hai: koi fitting charge nahi, koi hidden cost nahi."</div>';
+  h += '<button class="btn pri" onclick="logFromGuide()">Log this customer</button></div>';
+  return h;
+}
+function addonName(id){ for (var i = 0; i < CFG.addons.length; i++) if (CFG.addons[i].id === id) return CFG.addons[i].n; return id; }
+function addonPrice(id){ for (var i = 0; i < CFG.addons.length; i++) if (CFG.addons[i].id === id) return CFG.addons[i].p; return 0; }
+
+function logFromGuide(){
+  var cat = catFromAns();
+  var p = pick(cat, reqFromAns(cat), 'reg');
+  LOGF = newLogForm();
+  LOGF.cat = cat;
+  LOGF.tier = p.rec ? p.rec.id : '';
+  LOGF.need = needTags();
+  go('log');
+}
+function needTags(){
+  var t = [];
+  if (ANS.screen === 's2' || ANS.screen === 's6') t.push('screen');
+  if (ANS.drive === 'y') t.push('night-drive');
+  if (ANS.sun === 'y') t.push('sun');
+  if (ANS.thick === 'y') t.push('thick');
+  if (ANS.env === 'dust') t.push('dust');
+  if (ANS.env === 'kid') t.push('kid');
+  if (ANS.spend) t.push(ANS.spend);
+  return t;
+}
+
+function renderCoach(){
+  var h = '<div style="margin-bottom:6px">' + subBtn('guide','Ask & suggest') + subBtn('book','All products') + subBtn('obj','Objections') + subBtn('rules','Offer rules') + '</div>';
+  if (SUB === 'guide') h += guideHtml();
+  else if (SUB === 'book') h += bookHtml();
+  else if (SUB === 'obj') h += objHtml();
+  else h += rulesHtml();
+  $('view').innerHTML = h;
+}
+function subBtn(id, l){ return '<button class="btn sm' + (SUB === id ? ' on' : '') + '" onclick="SUB=\'' + id + '\';render()">' + l + '</button>'; }
+
+function guideHtml(){
+  var h = '<div class="card"><h2>Ask these questions</h2><div class="mut">Ask in this order. Tap the customer\'s answer. Don\'t show the price card until the end.</div>';
+  var all = true, n = 0;
+  for (var i = 0; i < QS.length; i++) {
+    var q = QS[i];
+    if (q.when && !q.when()) continue;
+    n++;
+    h += '<div style="margin:14px 0 4px"><b>' + n + '. ' + esc(q.q) + '</b><div class="mut">Say: ' + esc(q.say) + '</div><div>';
+    for (var j = 0; j < q.o.length; j++) {
+      h += '<button class="btn sm' + (ANS[q.id] === q.o[j][0] ? ' on' : '') + '" onclick="setAns(\'' + q.id + '\',\'' + q.o[j][0] + '\')">' + esc(q.o[j][1]) + '</button>';
+    }
+    h += '</div></div>';
+    if (!ANS[q.id]) all = false;
+  }
+  h += '<button class="btn sm" onclick="ANS={};render();window.scrollTo(0,0)">New customer</button></div>';
+  h += all ? resultHtml() : '<div class="card mut">Answer every question to see what to suggest and what to say.</div>';
+  return h;
+}
+
+function bookHtml(){
+  var h = '<div class="card"><h2>All products</h2><div class="mut">Who each lens is for, and what each step up adds. Learn these.</div></div>';
+  h += bookGroup('Single vision · Card A', CFG.sv.filter(function(t){ return t.card === 'A'; }), 'sv');
+  h += bookGroup('Single vision · Card B (thinner)', CFG.sv.filter(function(t){ return t.card === 'B'; }), 'sv');
+  h += bookGroup('Progressive', CFG.prog, 'prog');
+  return h;
+}
+function bookGroup(title, list, cat){
+  var h = '<div class="card"><h3>' + esc(title) + '</h3>';
+  var prev = null;
+  for (var i = 0; i < list.length; i++) {
+    var t = list[i];
+    h += '<div class="tier"><b>' + esc(t.name) + '</b>' + (cat === 'prog' ? ' · ' + esc(CFG.corridors[t.cor]) + ' corridor' : '') + '<br>';
+    if (cat === 'prog') h += '<span class="price">' + rs(t.p1) + '</span> for 1 · ' + rs(t.p2) + ' for 2';
+    else h += '<span class="price">' + rs(t.price) + '</span> (2 pairs)' + (t.priceAtt != null ? ' · Attachment/Bifocal ' + rs(t.priceAtt) : ' · no attachment option');
+    h += '<div class="mut">For: ' + esc(t.best) + '</div><div>';
+    for (var j = 0; j < t.f.length; j++) h += '<span class="tag">' + esc(fname(t.f[j])) + '</span>';
+    if (t.thin) h += '<span class="tag">' + t.thin + '% thinner</span>';
+    h += '</div>';
+    if (cat === 'prog' && t.attRemove && t.attRemove.length) h += '<div class="mut">With attachment frames: no ' + esc(t.attRemove.map(fname).join(', ')) + '</div>';
+    if (prev && (cat === 'prog' || prev.card === t.card) && t.id !== 'A7') {
+      var add = t.f.filter(function(k){ return prev.f.indexOf(k) < 0; });
+      var lines = [];
+      for (var a = 0; a < add.length; a++) lines.push(fname(add[a]));
+      if ((t.thin || 0) > (prev.thin || 0)) lines.push(t.thin + '% thinner');
+      if (cat === 'prog' && t.cor > prev.cor) lines.push(CFG.corridors[t.cor] + ' corridor');
+      if (lines.length) h += '<div class="say">Step up from ' + esc(prev.name) + ': +' + esc(lines.join(', ')) + '</div>';
+      else h += '<div class="note">Same features as ' + esc(prev.name) + '. Hard to justify; explain the real difference.</div>';
+    }
+    h += '</div>';
+    if (t.id !== 'A7') prev = t;
+  }
+  return h + '</div>';
+}
+function objHtml(){
+  var h = '<div class="card"><h2>When the customer says…</h2>';
+  for (var i = 0; i < CFG.objections.length; i++) {
+    h += '<div class="tier"><b>"' + esc(CFG.objections[i].q) + '"</b><div class="say">' + esc(CFG.objections[i].a) + '</div></div>';
+  }
+  return h + '</div>';
+}
+function rulesHtml(){
+  var h = '<div class="card"><h2>Offer rules</h2><ul>';
+  for (var i = 0; i < CFG.rules.length; i++) h += '<li style="margin:6px 0">' + esc(CFG.rules[i]) + '</li>';
+  h += '</ul><div class="mut">Price list last updated: ' + esc(CFG.updated) + '</div></div>';
+  return h;
+}
+
+/* ===== Log ===== */
+function newLogForm(){ return {date: today(), staff: '', cat: '', frame: 'reg', tier: '', pairs: 2, addons: {}, bought: null, reason: '', lk: null, need: [], cust: '', src: '', test: null, name: '', phone: ''}; }
+function lf(k, v){ LOGF[k] = v; if (k === 'cat') { LOGF.tier = ''; LOGF.frame = 'reg'; } if (k === 'frame') LOGF.tier = ''; renderLog(); }
+function lfAddon(id){ LOGF.addons[id] = !LOGF.addons[id]; renderLog(); }
+function logAmount(){
+  if (!LOGF.bought || LOGF.cat === 'enq' || !LOGF.tier) return 0;
+  var t = findTier(LOGF.tier); if (!t) return 0;
+  var p = priceOf(t, LOGF.cat, LOGF.frame, LOGF.cat === 'prog' ? LOGF.pairs : 2) || 0;
+  for (var i = 0; i < CFG.addons.length; i++) if (LOGF.addons[CFG.addons[i].id]) p += CFG.addons[i].p;
+  return p;
+}
+function choice(key, val, label){
+  var on = LOGF[key] === val;
+  var v = typeof val === 'string' ? '\'' + val + '\'' : String(val);
+  return '<button class="btn sm' + (on ? ' on' : '') + '" onclick="lf(\'' + key + '\',' + v + ')">' + esc(label) + '</button>';
+}
+function renderLog(){
+  if (!LOGF) LOGF = newLogForm();
+  var f = LOGF, i;
+  var h = '<div class="card"><h2>Log a customer</h2><div class="mut">Every customer, bought or not. Takes 20 seconds.</div>';
+  h += '<div class="sec">Served by</div>';
+  for (i = 0; i < CFG.staff.length; i++) h += choice('staff', CFG.staff[i], CFG.staff[i]);
+  h += '<div class="sec">Customer wanted</div>';
+  for (var c in CATS) h += choice('cat', c, CATS[c]);
+  if (f.cat === 'sv' || f.cat === 'prog') {
+    h += '<div class="sec">Frame</div>' + choice('frame', 'reg', 'Regular frame') + choice('frame', 'att', 'Attachment frame');
+  }
+  if (f.cat && f.cat !== 'enq') {
+    var list = tiersFor(f.cat);
+    h += '<div class="sec">Lens ' + (f.bought === false ? '(what was shown)' : '') + '</div><select onchange="lf(\'tier\',this.value)"><option value="">Choose…</option>';
+    for (i = 0; i < list.length; i++) {
+      var t = list[i], pr = priceOf(t, f.cat, f.frame, 2);
+      if (pr == null) continue;
+      h += '<option value="' + t.id + '"' + (f.tier === t.id ? ' selected' : '') + '>' + esc(t.name) + ' — ' + esc(priceLabel(t, f.cat, f.frame)) + '</option>';
+    }
+    h += '</select>';
+    if (f.cat === 'prog') h += choice('pairs', 1, '1 pair') + choice('pairs', 2, '2 pairs');
+    h += '<div class="sec">Add-ons</div>';
+    for (i = 0; i < CFG.addons.length; i++) {
+      var ad = CFG.addons[i];
+      h += '<button class="btn sm' + (f.addons[ad.id] ? ' on' : '') + '" onclick="lfAddon(\'' + ad.id + '\')">' + esc(ad.n) + ' +' + rs(ad.p) + '</button>';
+    }
+  }
+  h += '<div class="sec">Customer</div>' + choice('cust', 'new', 'New') + choice('cust', 'rep', 'Repeat (bought before)');
+  h += '<div class="sec">How did they come?</div>';
+  for (i = 0; i < SOURCES.length; i++) h += choice('src', SOURCES[i], SOURCES[i]);
+  h += '<div class="sec">Eye test done here?</div>' + choice('test', true, 'Yes') + choice('test', false, 'No (outside prescription / no test)');
+  h += '<div class="sec">Result</div>' + choice('bought', true, 'Bought') + choice('bought', false, 'Did not buy');
+  if (f.bought === false) {
+    h += '<div class="sec">Why not?</div>';
+    for (i = 0; i < LOST.length; i++) h += choice('reason', LOST[i], LOST[i]);
+  }
+  h += '<div class="sec">Compared with Lenskart?</div>' + choice('lk', true, 'Yes') + choice('lk', false, 'No');
+  var fuNeeded = f.bought === false && FU_REASONS.indexOf(f.reason) > -1;
+  h += '<div class="sec">Name and phone ' + (fuNeeded ? '<span class="bad">(needed for follow-up)</span>' : '<span class="mut">(optional)</span>') + '</div>';
+  h += '<div class="row"><input placeholder="Name" value="' + esc(f.name) + '" oninput="LOGF.name=this.value"><input placeholder="Mobile" type="tel" value="' + esc(f.phone) + '" oninput="LOGF.phone=this.value"></div>';
+  if (f.bought) h += '<div class="sec">Bill</div><div class="price">' + rs(logAmount()) + '</div>';
+  h += '<div style="margin-top:12px"><button class="btn pri" onclick="saveLog()">Save</button> <button class="btn sm" onclick="LOGF=newLogForm();renderLog()">Clear</button></div></div>';
+  h += '<div class="card" id="todayList"><h3>Today</h3><div class="mut">Loading…</div></div>';
+  $('view').innerHTML = h;
+  loadToday();
+}
+function saveLog(){
+  var f = LOGF;
+  if (!f.staff) return alert('Choose who served the customer.');
+  if (!f.cat) return alert('Choose what the customer wanted.');
+  if (f.bought === null) return alert('Choose Bought or Did not buy.');
+  if (f.bought && f.cat !== 'enq' && !f.tier) return alert('Choose the lens they bought.');
+  if (f.bought === false && !f.reason) return alert('Choose why they did not buy.');
+  if (f.lk === null) return alert('Did they compare with Lenskart? Tap Yes or No.');
+  if (!f.cust) return alert('New or repeat customer?');
+  if (!f.src) return alert('How did they come?');
+  if (f.test === null) return alert('Eye test done here? Tap Yes or No.');
+  var phone = (f.phone || '').replace(/\D/g, '').slice(-10);
+  var fu = f.bought === false && FU_REASONS.indexOf(f.reason) > -1;
+  if (fu && phone.length !== 10 && !confirm('No valid mobile number, so no follow-up is possible. Save anyway?')) return;
+  var t = f.tier ? findTier(f.tier) : null;
+  var ads = [];
+  for (var k in f.addons) if (f.addons[k]) ads.push(k);
+  var rec = {
+    date: today(), ts: Date.now(), staff: f.staff, cat: f.cat, frame: f.cat === 'sv' || f.cat === 'prog' ? f.frame : (f.cat === 'bif' ? 'att' : ''),
+    tier: f.tier || '', tierName: t ? t.name : '', pairs: f.cat === 'prog' ? f.pairs : (f.cat === 'enq' ? 0 : 2),
+    addons: ads, bought: !!f.bought, amount: logAmount(), reason: f.bought ? '' : f.reason, lk: !!f.lk, need: f.need || [], by: USER.email,
+    cust: f.cust, src: f.src, test: !!f.test, name: (f.name || '').trim(), phone: phone,
+    fu: fu && phone.length === 10 ? 'open' : '', fuDue: fu ? addDays(today(), 2) : ''
+  };
+  db.collection('sales_log').add(rec).then(function(){
+    var staff = f.staff;
+    LOGF = newLogForm(); LOGF.staff = staff;
+    renderLog(); window.scrollTo(0,0);
+  }).catch(function(err){ alert('Save failed: ' + err.message); });
+}
+function loadToday(){
+  db.collection('sales_log').where('date', '==', today()).get().then(function(snap){
+    var rows = [];
+    snap.forEach(function(d){ var x = d.data(); x._id = d.id; rows.push(x); });
+    rows.sort(function(a, b){ return b.ts - a.ts; });
+    var bought = 0, rev = 0;
+    var h = '<h3>Today</h3>';
+    if (!rows.length) { $('todayList').innerHTML = h + '<div class="mut">No customers logged yet.</div>'; return; }
+    var tb = '<table><tr><th>Staff</th><th>Wanted</th><th>Result</th><th></th></tr>';
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (r.bought) { bought++; rev += r.amount; }
+      tb += '<tr><td>' + esc(r.staff) + '</td><td>' + esc(CATS[r.cat] || r.cat) + (r.tierName ? '<br><span class="mut">' + esc(r.tierName) + '</span>' : '') + '</td><td>' +
+        (r.bought ? '<span class="ok">' + rs(r.amount) + '</span>' : '<span class="bad">' + esc(r.reason) + '</span>') + '</td><td>' +
+        (isOwner() ? '<button class="btn sm del" onclick="delLog(\'' + r._id + '\')">✕</button>' : '') + '</td></tr>';
+    }
+    h += '<div class="mut">' + rows.length + ' customers · ' + bought + ' bought (' + pct(bought, rows.length) + '%) · ' + rs(rev) + '</div>' + tb + '</table>';
+    $('todayList').innerHTML = h;
+  }).catch(function(err){ $('todayList').innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+}
+function delLog(id){ if (!confirm('Delete this entry?')) return; db.collection('sales_log').doc(id).delete().then(loadToday); }
+
+/* ===== Target ===== */
+function monthKey(d){ return d.slice(0, 7); }
+function daysInMonth(key){ var p = key.split('-'); return new Date(+p[0], +p[1], 0).getDate(); }
+function monthLabel(key){ var m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; var p = key.split('-'); return m[+p[1] - 1] + ' ' + p[0]; }
+function shiftMonth(key, n){ var p = key.split('-'); var d = new Date(+p[0], +p[1] - 1 + n, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); }
+/* Eyeland pattern: the last ~12 days bring ~55% of a month's sales. Expected progress follows that curve, not a straight line. */
+function paceShare(d, N){
+  var k = Math.min(12, N), first = N - k;
+  if (d <= 0) return 0;
+  if (d >= N) return 1;
+  if (d <= first) return first ? 0.45 * d / first : 0;
+  return 0.45 + 0.55 * (d - first) / k;
+}
+function renderTarget(){
+  if (!MONTH) MONTH = monthKey(today());
+  if (!CFG.targets) CFG.targets = {};
+  var key = MONTH, N = daysInMonth(key), tg = CFG.targets[key] || null, own = isOwner();
+  var cur = monthKey(today());
+  var d = key === cur ? +today().slice(8, 10) : (key < cur ? N : 0);
+  var h = '<div class="card"><div class="row" style="align-items:center"><button class="btn sm" style="flex:0" onclick="MONTH=shiftMonth(MONTH,-1);renderTarget()">◀</button><h2 style="text-align:center;margin:0">' + monthLabel(key) + '</h2><button class="btn sm" style="flex:0" onclick="MONTH=shiftMonth(MONTH,1);renderTarget()">▶</button></div></div>';
+  if (own) {
+    h += '<div class="card"><h3>' + (tg ? 'Target for ' + monthLabel(key) : 'Set the target for ' + monthLabel(key)) + '</h3><div class="row"><div><label>Sales target ₹</label><input id="t_sales" type="number" value="' + (tg ? tg.sales : '') + '"></div><div><label>Orders target</label><input id="t_orders" type="number" value="' + (tg ? tg.orders : '') + '"></div></div><button class="btn ' + (tg ? 'sm' : 'pri') + '" onclick="saveTarget()">' + (tg ? 'Update target' : 'Save target') + '</button></div>';
+  }
+  h += '<div id="tgBody" class="card mut">' + (tg ? 'Loading…' : 'No target set for this month.') + '</div>';
+  h += '<div id="fuBody" class="card"><h3>Follow-ups due</h3><div class="mut">Loading…</div></div>';
+  $('view').innerHTML = h;
+  loadFollowups();
+  if (!tg) return;
+  fetchRange(key + '-01', key + '-' + pad(N)).then(function(rows){
+    var s = stats(rows);
+    var share = paceShare(d, N);
+    var expected = Math.round(tg.sales * share);
+    var left = N - d;
+    var gap = Math.max(0, tg.sales - s.rev);
+    var proj = share > 0 ? Math.round(s.rev / share) : 0;
+    var onTrack = s.rev >= expected;
+    var b = '<h2>' + rs(s.rev) + ' <span class="mut" style="font-size:15px">of ' + rs(tg.sales) + '</span></h2>';
+    b += '<div class="barw" style="height:14px"><div class="bar" style="height:14px;width:' + Math.min(100, pct(s.rev, tg.sales)) + '%"></div></div>';
+    b += '<div class="mut" style="margin-top:4px">' + pct(s.rev, tg.sales) + '% done · day ' + d + ' of ' + N + '</div>';
+    if (d > 0 && d < N) {
+      b += '<div class="' + (onTrack ? 'say' : 'note') + '" style="font-size:16px"><b>' + (onTrack ? 'ON TRACK' : 'BEHIND by ' + rs(expected - s.rev)) + '</b><br>Should be at ' + rs(expected) + ' by today (month-end weighted: last 12 days bring ~55%).</div>';
+      b += '<div class="kpi"><div>Still needed<b>' + rs(gap) + '</b></div><div>Per remaining day<b>' + rs(left ? Math.round(gap / left) : gap) + '</b><span class="mut">' + left + ' days left</span></div>';
+      b += '<div>Month-end projection<b class="' + (proj >= tg.sales ? 'ok' : 'bad') + '">' + rs(proj) + '</b></div><div>Orders<b>' + s.b + ' / ' + (tg.orders || '—') + '</b></div></div>';
+    } else if (d >= N) {
+      b += '<div class="' + (s.rev >= tg.sales ? 'say' : 'note') + '" style="font-size:16px"><b>' + (s.rev >= tg.sales ? 'TARGET HIT' : 'MISSED by ' + rs(tg.sales - s.rev)) + '</b></div>';
+      b += '<div class="kpi"><div>Orders<b>' + s.b + ' / ' + (tg.orders || '—') + '</b></div><div>Avg bill<b>' + rs(s.avg) + '</b></div></div>';
+    }
+    b += '<div class="sec">Sales = Customers × Conversion × Avg bill</div>';
+    b += '<div class="kpi"><div>Customers<b>' + s.n + '</b></div><div>Conversion<b>' + s.conv + '%</b></div><div>Avg bill<b>' + rs(s.avg) + '</b></div><div>Lost customers<b>' + (s.n - s.b) + '</b></div></div>';
+    if (d > 0 && d < N && proj < tg.sales && s.n && s.b) {
+      var projCust = s.n / share, projBuy = s.b / share;
+      var needCust = Math.ceil(tg.sales / ((s.b / s.n) * s.avg) - projCust);
+      var needConv = Math.ceil(tg.sales * 100 / (projCust * s.avg));
+      var needAvg = Math.ceil(tg.sales / projBuy);
+      b += '<div class="sec">To hit the target, fix ONE of these</div>';
+      b += '<div class="reason"><b>More customers:</b> +' + needCust + ' more walk-ins this month (marketing, Instagram, follow-ups)</div>';
+      b += '<div class="reason"><b>Better conversion:</b> ' + s.conv + '% → ' + Math.min(100, needConv) + '% (pitch, objections, offer)' + (needConv > 100 ? ' <span class="bad">not possible alone</span>' : '') + '</div>';
+      b += '<div class="reason"><b>Bigger bill:</b> ' + rs(s.avg) + ' → ' + rs(needAvg) + ' (upgrade, second pair, add-ons)</div>';
+      var top = Object.keys(s.reasons).sort(function(a, c){ return s.reasons[c] - s.reasons[a]; })[0];
+      if (top) b += '<div class="note">Biggest leak so far: <b>' + esc(top) + '</b> (' + s.reasons[top] + ' lost customers).</div>';
+    }
+    $('tgBody').className = 'card';
+    $('tgBody').innerHTML = b;
+  }).catch(function(err){ $('tgBody').innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+}
+function loadFollowups(){
+  db.collection('sales_log').where('fu', '==', 'open').get().then(function(snap){
+    var rows = [];
+    snap.forEach(function(d){ var x = d.data(); x._id = d.id; rows.push(x); });
+    rows.sort(function(a, b){ return a.fuDue < b.fuDue ? -1 : 1; });
+    var h = '<h3>Follow-ups due (' + rows.length + ')</h3><div class="mut">Customers who left without buying. Call or WhatsApp within 2 days.</div>';
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i], due = r.fuDue <= today();
+      var msg = encodeURIComponent('Namaste' + (r.name ? ' ' + r.name : '') + ', Eyeland Opticians se. Aapne jo ' + (CATS[r.cat] || 'specs') + ' dekhe the, uska offer abhi bhi chal raha hai. Koi sawaal ho to batayein.');
+      h += '<div class="tier"><b>' + esc(r.name || 'No name') + '</b> · ' + esc(CATS[r.cat] || '') + (r.tierName ? ' · ' + esc(r.tierName) : '') + '<div class="mut">' + esc(r.reason) + ' · visited ' + esc(r.date) + ' · ' + (due ? '<span class="bad">due now</span>' : 'due ' + esc(r.fuDue)) + '</div>';
+      h += '<a class="btn sm" href="tel:+91' + r.phone + '">Call</a><a class="btn sm" target="_blank" href="https://wa.me/91' + r.phone + '?text=' + msg + '">WhatsApp</a>';
+      h += '<button class="btn sm on" onclick="closeFu(\'' + r._id + '\',\'won\')">Came back & bought</button><button class="btn sm" onclick="closeFu(\'' + r._id + '\',\'lost\')">Not interested</button></div>';
+    }
+    if (!rows.length) h += '<div class="mut" style="margin-top:6px">Nothing pending.</div>';
+    $('fuBody').innerHTML = h;
+  }).catch(function(err){ $('fuBody').innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+}
+function closeFu(id, v){
+  if (v === 'won') alert('Also log their purchase as a new customer entry (source: Old customer is fine).');
+  db.collection('sales_log').doc(id).update({fu: v, fuClosed: today()}).then(loadFollowups);
+}
+function groupTable(title, obj){
+  var keys = Object.keys(obj).sort(function(a, b){ return obj[b].n - obj[a].n; });
+  if (!keys.length) return '';
+  var h = '<div class="sec">' + esc(title) + '</div><table><tr><th></th><th>Customers</th><th>Bought</th><th>Conv.</th><th>Sales</th></tr>';
+  for (var i = 0; i < keys.length; i++) { var x = obj[keys[i]]; h += '<tr><td>' + esc(keys[i]) + '</td><td>' + x.n + '</td><td>' + x.b + '</td><td>' + pct(x.b, x.n) + '%</td><td>' + rs(x.rev) + '</td></tr>'; }
+  return h + '</table>';
+}
+function saveTarget(){
+  var sales = +$('t_sales').value || 0, orders = +$('t_orders').value || 0;
+  if (!sales) return alert('Enter the sales target.');
+  if (!CFG.targets) CFG.targets = {};
+  var old = CFG.targets[MONTH];
+  CFG.targets[MONTH] = {sales: sales, orders: orders};
+  saveCfg('Target ' + monthLabel(MONTH) + (old ? ': ' + old.sales + ' → ' + sales : ' set: ' + sales) + ', orders ' + orders).then(renderTarget);
+}
+function diagnosisHtml(s, ps){
+  var out = [];
+  if (!s.n) return '';
+  var top = Object.keys(s.reasons).sort(function(a, c){ return s.reasons[c] - s.reasons[a]; });
+  if (top.length) out.push('Biggest reason for lost sales: <b>' + esc(top[0]) + '</b> (' + pct(s.reasons[top[0]], s.n - s.b) + '% of lost customers).');
+  if (s.lkN >= 3 && pct(s.lkB, s.lkN) < s.conv) out.push('Customers who compared with Lenskart convert worse (' + pct(s.lkB, s.lkN) + '% vs ' + s.conv + '%). Fix the Lenskart comparison: card, signage, pitch.');
+  if (ps && ps.n) {
+    if (s.n < ps.n) out.push('Fewer customers than the previous 15 days (' + s.n + ' vs ' + ps.n + '). This is a footfall problem: marketing, not the sales pitch.');
+    if (s.conv < ps.conv) out.push('Conversion dropped (' + ps.conv + '% → ' + s.conv + '%). Check the latest change and the staff with the lowest conversion.');
+    if (s.avg < ps.avg) out.push('Average bill dropped (' + rs(ps.avg) + ' → ' + rs(s.avg) + '). Push need-based upgrades and the second pair.');
+    if (s.rev > ps.rev) out.push('Sales are up ' + rs(s.rev - ps.rev) + ' on the previous 15 days. Keep what changed.');
+  }
+  var th = s.test['Tested here'], tn = s.test['Not tested here'];
+  if (th && tn && th.n >= 3 && tn.n >= 3 && pct(th.b, th.n) > pct(tn.b, tn.n) + 10) out.push('Eye test here converts ' + pct(th.b, th.n) + '% vs ' + pct(tn.b, tn.n) + '% without. Offer a free eye test to every walk-in.');
+  var rp = s.cust['Repeat'];
+  if (rp && s.n >= 10) out.push('Repeat customers: ' + pct(rp.n, s.n) + '% of walk-ins, ' + pct(rp.rev, s.rev) + '% of sales.');
+  if (s.fuOpen) out.push(s.fuOpen + ' follow-ups still open. Call them before the next review.');
+  for (var k in s.staff) { var x = s.staff[k]; if (x.n >= 5 && pct(x.b, x.n) < s.conv - 15) out.push('<b>' + esc(k) + '</b> converts ' + pct(x.b, x.n) + '% vs team ' + s.conv + '%. Needs coaching.'); }
+  if (!out.length) return '';
+  var h = '<div class="note"><b>What the data says</b><ul style="margin:6px 0 0;padding-left:18px">';
+  for (var i = 0; i < out.length; i++) h += '<li style="margin:4px 0">' + out[i] + '</li>';
+  return h + '</ul></div>';
+}
+
+/* ===== Report ===== */
+function periodRange(p){
+  var t = today();
+  if (p === 'last15') return {from: addDays(t, -14), to: t, label: 'Last 15 days'};
+  if (p === 'prev15') return {from: addDays(t, -29), to: addDays(t, -15), label: 'Previous 15 days'};
+  if (p === 'month') return {from: t.slice(0, 8) + '01', to: t, label: 'This month'};
+  return {from: addDays(t, -89), to: t, label: 'Last 90 days'};
+}
+function fetchRange(from, to){
+  return db.collection('sales_log').where('date', '>=', from).where('date', '<=', to).get().then(function(snap){
+    var rows = []; snap.forEach(function(d){ rows.push(d.data()); }); return rows;
+  });
+}
+function stats(rows){
+  var s = {n:0, b:0, rev:0, staff:{}, reasons:{}, tiers:{}, cats:{}, lkN:0, lkB:0, addon:0, att:0, src:{}, cust:{}, test:{}, fuOpen:0, fuWon:0, fuLost:0};
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    s.n++;
+    if (!s.staff[r.staff]) s.staff[r.staff] = {n:0, b:0, rev:0};
+    s.staff[r.staff].n++;
+    if (!s.cats[r.cat]) s.cats[r.cat] = {n:0, b:0};
+    s.cats[r.cat].n++;
+    if (r.lk) { s.lkN++; if (r.bought) s.lkB++; }
+    var groups = [['src', r.src || 'Not recorded'], ['cust', r.cust === 'rep' ? 'Repeat' : (r.cust === 'new' ? 'New' : 'Not recorded')], ['test', r.test === true ? 'Tested here' : (r.test === false ? 'Not tested here' : 'Not recorded')]];
+    for (var g = 0; g < groups.length; g++) { var gk = groups[g][0], gv = groups[g][1]; if (!s[gk][gv]) s[gk][gv] = {n:0, b:0, rev:0}; s[gk][gv].n++; if (r.bought) { s[gk][gv].b++; s[gk][gv].rev += r.amount || 0; } }
+    if (r.fu === 'open') s.fuOpen++; else if (r.fu === 'won') s.fuWon++; else if (r.fu === 'lost') s.fuLost++;
+    if (r.bought) {
+      s.b++; s.rev += r.amount || 0;
+      s.staff[r.staff].b++; s.staff[r.staff].rev += r.amount || 0;
+      s.cats[r.cat].b++;
+      if (r.tierName) { var key = (CATS[r.cat] || r.cat) + ': ' + r.tierName; s.tiers[key] = (s.tiers[key] || 0) + 1; }
+      if (r.addons && r.addons.length) s.addon++;
+      if (r.frame === 'att') s.att++;
+    } else if (r.reason) { s.reasons[r.reason] = (s.reasons[r.reason] || 0) + 1; }
+  }
+  s.conv = pct(s.b, s.n);
+  s.avg = s.b ? Math.round(s.rev / s.b) : 0;
+  return s;
+}
+function delta(cur, prev, money){
+  if (prev == null) return '';
+  var d = cur - prev;
+  if (!d) return ' <span class="mut">(same)</span>';
+  return ' <span class="' + (d > 0 ? 'ok' : 'bad') + '">' + (d > 0 ? '▲' : '▼') + (money ? rs(Math.abs(d)) : Math.abs(d)) + '</span>';
+}
+function bars(obj, total){
+  var keys = Object.keys(obj).sort(function(a, b){ return obj[b] - obj[a]; });
+  if (!keys.length) return '<div class="mut">None</div>';
+  var h = '';
+  for (var i = 0; i < keys.length; i++) {
+    h += '<div style="margin:6px 0">' + esc(keys[i]) + ' <b>' + obj[keys[i]] + '</b><div class="barw"><div class="bar" style="width:' + pct(obj[keys[i]], total) + '%"></div></div></div>';
+  }
+  return h;
+}
+var LAST_ROWS = [], LAST_STATS = null, LAST_RANGE = null;
+function renderReport(){
+  var h = '<div style="margin-bottom:6px">';
+  var ps = [['last15','Last 15 days'],['prev15','Previous 15'],['month','This month'],['90','Last 90 days']];
+  for (var i = 0; i < ps.length; i++) h += '<button class="btn sm' + (PERIOD === ps[i][0] ? ' on' : '') + '" onclick="PERIOD=\'' + ps[i][0] + '\';renderReport()">' + ps[i][1] + '</button>';
+  h += '</div><div id="rep" class="card mut">Loading…</div>' + changesBlockHtml();
+  $('view').innerHTML = h;
+  var rg = periodRange(PERIOD);
+  var cmp = PERIOD === 'last15' ? periodRange('prev15') : null;
+  var p1 = fetchRange(rg.from, rg.to);
+  var p2 = cmp ? fetchRange(cmp.from, cmp.to) : Promise.resolve(null);
+  Promise.all([p1, p2]).then(function(res){
+    var s = stats(res[0]), ps = res[1] ? stats(res[1]) : null;
+    LAST_ROWS = res[0]; LAST_STATS = s; LAST_RANGE = rg;
+    var h2 = '<h2>' + esc(rg.label) + '</h2><div class="mut">' + rg.from + ' to ' + rg.to + (ps ? ' · arrows compare with the previous 15 days' : '') + '</div>';
+    h2 += '<div class="kpi" style="margin-top:10px">';
+    h2 += '<div>Customers<b>' + s.n + delta(s.n, ps && ps.n) + '</b></div>';
+    h2 += '<div>Bought<b>' + s.b + delta(s.b, ps && ps.b) + '</b></div>';
+    h2 += '<div>Conversion<b>' + s.conv + '%' + delta(s.conv, ps && ps.conv) + '</b></div>';
+    h2 += '<div>Avg bill<b>' + rs(s.avg) + delta(s.avg, ps && ps.avg, true) + '</b></div>';
+    h2 += '<div>Sales<b>' + rs(s.rev) + delta(s.rev, ps && ps.rev, true) + '</b></div>';
+    h2 += '<div>Compared Lenskart<b>' + s.lkN + '</b><span class="mut">' + s.lkB + ' of them bought (' + pct(s.lkB, s.lkN) + '%)</span></div>';
+    h2 += '<div>With add-on<b>' + pct(s.addon, s.b) + '%</b><span class="mut">of sales</span></div>';
+    h2 += '<div>Attachment frames<b>' + pct(s.att, s.b) + '%</b><span class="mut">of sales</span></div>';
+    h2 += '</div>';
+    h2 += '<div class="sec">By staff</div><table><tr><th>Staff</th><th>Customers</th><th>Bought</th><th>Conv.</th><th>Avg bill</th></tr>';
+    for (var k in s.staff) { var x = s.staff[k]; h2 += '<tr><td>' + esc(k) + '</td><td>' + x.n + '</td><td>' + x.b + '</td><td>' + pct(x.b, x.n) + '%</td><td>' + rs(x.b ? Math.round(x.rev / x.b) : 0) + '</td></tr>'; }
+    h2 += '</table>';
+    h2 += '<div class="sec">By product type</div><table><tr><th>Type</th><th>Customers</th><th>Bought</th><th>Conv.</th></tr>';
+    for (var c in s.cats) h2 += '<tr><td>' + esc(CATS[c] || c) + '</td><td>' + s.cats[c].n + '</td><td>' + s.cats[c].b + '</td><td>' + pct(s.cats[c].b, s.cats[c].n) + '%</td></tr>';
+    h2 += '</table>';
+    h2 += groupTable('Where customers came from', s.src);
+    h2 += groupTable('New vs repeat', s.cust);
+    h2 += groupTable('Eye test here vs outside', s.test);
+    h2 += '<div class="sec">Follow-ups</div><div class="mut">Won back ' + s.fuWon + ' · lost ' + s.fuLost + ' · still open ' + s.fuOpen + '</div>';
+    h2 += '<div class="sec">Why customers did not buy</div>' + bars(s.reasons, s.n - s.b);
+    h2 += '<div class="sec">What sold</div>' + bars(s.tiers, s.b);
+    h2 += '<div style="margin-top:14px"><button class="btn pri" onclick="copyReview()">Copy data for 15-day review</button></div>';
+    $('rep').className = 'card';
+    $('rep').innerHTML = diagnosisHtml(s, ps) + h2;
+    loadChanges();
+  }).catch(function(err){ $('rep').innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+}
+function copyReview(){
+  var s = LAST_STATS, rg = LAST_RANGE;
+  var t = 'EYELAND SALES DATA — ' + rg.label + ' (' + rg.from + ' to ' + rg.to + ')\n';
+  t += 'Customers ' + s.n + ', bought ' + s.b + ', conversion ' + s.conv + '%, sales ' + s.rev + ', avg bill ' + s.avg + '\n';
+  t += 'Compared Lenskart ' + s.lkN + ' (bought ' + s.lkB + '), add-on sales ' + s.addon + ', attachment-frame sales ' + s.att + '\n\n';
+  t += 'date,staff,wanted,frame,lens,pairs,addons,bought,amount,reason,lenskart,needs,customer,source,eyetest,followup\n';
+  for (var i = 0; i < LAST_ROWS.length; i++) {
+    var r = LAST_ROWS[i];
+    t += [r.date, r.staff, r.cat, r.frame, '"' + (r.tierName || '') + '"', r.pairs, (r.addons || []).join('+'), r.bought ? 'Y' : 'N', r.amount || 0, '"' + (r.reason || '') + '"', r.lk ? 'Y' : 'N', (r.need || []).join('+'), r.cust || '', r.src || '', r.test ? 'Y' : 'N', r.fu || ''].join(',') + '\n';
+  }
+  t += '\nCURRENT PRICE LIST (updated ' + CFG.updated + ')\n';
+  for (var j = 0; j < CFG.sv.length; j++) { var a = CFG.sv[j]; t += 'SV ' + a.id + ' ' + a.name + ': ' + a.price + (a.priceAtt != null ? ' / att ' + a.priceAtt : '') + '\n'; }
+  for (var k = 0; k < CFG.prog.length; k++) { var b = CFG.prog[k]; t += 'PROG ' + b.id + ' ' + b.name + ': ' + b.p1 + ' / ' + b.p2 + '\n'; }
+  copyText(t);
+}
+
+/* ===== Prices & settings ===== */
+function renderPrices(){
+  var own = isOwner();
+  var h = '<div class="card"><h2>Price list</h2><div class="mut">Last updated ' + esc(CFG.updated) + (own ? '. Tap Edit to change a lens. Every change is saved in Changes.' : '. Only the owner can edit.') + '</div></div>';
+  h += priceGroup('Single vision · Card A', CFG.sv.filter(function(t){ return t.card === 'A'; }), 'sv', own);
+  h += priceGroup('Single vision · Card B', CFG.sv.filter(function(t){ return t.card === 'B'; }), 'sv', own);
+  h += priceGroup('Progressive', CFG.prog, 'prog', own);
+  if (own) h += settingsHtml();
+  $('view').innerHTML = h;
+}
+function priceGroup(title, list, cat, own){
+  var h = '<div class="card"><h3>' + esc(title) + '</h3><table><tr><th>Lens</th><th>' + (cat === 'prog' ? '1 pair' : 'Regular') + '</th><th>' + (cat === 'prog' ? '2 pairs' : 'Attach./Bifocal') + '</th><th></th></tr>';
+  for (var i = 0; i < list.length; i++) {
+    var t = list[i];
+    if (EDIT === t.id) { h += '<tr><td colspan="4">' + editForm(t, cat) + '</td></tr>'; continue; }
+    h += '<tr><td><b>' + esc(t.name) + '</b><br><span class="mut">' + esc(t.f.map(fname).join(', ')) + (t.thin ? ', ' + t.thin + '% thinner' : '') + '</span></td>';
+    h += cat === 'prog' ? '<td>' + rs(t.p1) + '</td><td>' + rs(t.p2) + '</td>' : '<td>' + rs(t.price) + '</td><td>' + (t.priceAtt != null ? rs(t.priceAtt) : '—') + '</td>';
+    h += '<td>' + (own ? '<button class="btn sm" onclick="EDIT=\'' + t.id + '\';renderPrices()">Edit</button>' : '') + '</td></tr>';
+  }
+  return h + '</table></div>';
+}
+function editForm(t, cat){
+  var h = '<div class="tier rec"><label>Name</label><input id="e_name" value="' + esc(t.name) + '">';
+  if (cat === 'prog') {
+    h += '<div class="row"><div><label>1 pair ₹</label><input id="e_p1" type="number" value="' + t.p1 + '"></div><div><label>2 pairs ₹</label><input id="e_p2" type="number" value="' + t.p2 + '"></div></div>';
+    h += '<label>Corridor (1 Standard … 5 Widest)</label><input id="e_cor" type="number" min="1" max="5" value="' + t.cor + '">';
+  } else {
+    h += '<div class="row"><div><label>Regular ₹</label><input id="e_price" type="number" value="' + t.price + '"></div><div><label>Attachment/Bifocal ₹ (blank = none)</label><input id="e_att" type="number" value="' + (t.priceAtt == null ? '' : t.priceAtt) + '"></div></div>';
+    h += '<label>Warranty</label><input id="e_war" value="' + esc(t.war || '') + '">';
+  }
+  h += '<label>% thinner (0 = standard)</label><input id="e_thin" type="number" value="' + (t.thin || 0) + '">';
+  h += '<label>Best for</label><input id="e_best" value="' + esc(t.best || '') + '">';
+  h += '<label>Features</label><div>';
+  for (var k in CFG.features) {
+    if (k === 'thin' || k === 'corridor') continue;
+    h += '<label style="display:inline-block;margin:3px 10px 3px 0;color:#1d1d1f"><input type="checkbox" class="e_f" value="' + k + '" style="width:auto;margin:0 4px 0 0"' + (t.f.indexOf(k) > -1 ? ' checked' : '') + '>' + esc(CFG.features[k].n) + '</label>';
+  }
+  h += '</div><div style="margin-top:10px"><button class="btn pri" onclick="saveTier(\'' + t.id + '\',\'' + cat + '\')">Save</button> <button class="btn sm" onclick="EDIT=null;renderPrices()">Cancel</button></div></div>';
+  return h;
+}
+function saveTier(id, cat){
+  var t = findTier(id);
+  var before = cat === 'prog' ? t.p1 + '/' + t.p2 : t.price + '/' + t.priceAtt;
+  t.name = $('e_name').value.trim() || t.name;
+  if (cat === 'prog') {
+    t.p1 = +$('e_p1').value; t.p2 = +$('e_p2').value; t.cor = Math.max(1, Math.min(5, +$('e_cor').value || 1));
+  } else {
+    t.price = +$('e_price').value;
+    t.priceAtt = $('e_att').value === '' ? null : +$('e_att').value;
+    t.war = $('e_war').value.trim();
+  }
+  t.thin = +$('e_thin').value || 0;
+  t.best = $('e_best').value.trim();
+  var fs = [], boxes = document.querySelectorAll('.e_f');
+  for (var i = 0; i < boxes.length; i++) if (boxes[i].checked) fs.push(boxes[i].value);
+  t.f = fs;
+  var after = cat === 'prog' ? t.p1 + '/' + t.p2 : t.price + '/' + t.priceAtt;
+  EDIT = null;
+  saveCfg(t.name + ' updated' + (before !== after ? ': price ' + before + ' → ' + after : ' (features/details)')).then(renderPrices);
+}
+function settingsHtml(){
+  var h = '<div class="card"><h3>Settings</h3>';
+  h += '<label>Staff (comma separated)</label><input id="s_staff" value="' + esc(CFG.staff.join(', ')) + '">';
+  h += '<label>Add-on prices</label>';
+  for (var i = 0; i < CFG.addons.length; i++) h += '<div class="row"><div style="flex:2;padding-top:12px">' + esc(CFG.addons[i].n) + '</div><div><input id="s_ad_' + CFG.addons[i].id + '" type="number" value="' + CFG.addons[i].p + '"></div></div>';
+  h += '<label>Offer rules (one per line)</label><textarea id="s_rules">' + esc(CFG.rules.join('\n')) + '</textarea>';
+  h += '<label>Objections (one per line: customer says | staff answer)</label><textarea id="s_obj" style="min-height:160px">' + esc(CFG.objections.map(function(o){ return o.q + ' | ' + o.a; }).join('\n')) + '</textarea>';
+  h += '<label>Owner email</label><input value="' + esc(CFG.ownerEmail) + '" disabled>';
+  h += '<button class="btn pri" onclick="saveSettings()">Save settings</button></div>';
+  return h;
+}
+function saveSettings(){
+  CFG.staff = $('s_staff').value.split(',').map(function(s){ return s.trim(); }).filter(function(s){ return s; });
+  for (var i = 0; i < CFG.addons.length; i++) CFG.addons[i].p = +$('s_ad_' + CFG.addons[i].id).value || 0;
+  CFG.rules = $('s_rules').value.split('\n').map(function(s){ return s.trim(); }).filter(function(s){ return s; });
+  CFG.objections = $('s_obj').value.split('\n').map(function(line){
+    var p = line.split('|'); return {q: (p[0] || '').trim(), a: p.slice(1).join('|').trim()};
+  }).filter(function(o){ return o.q && o.a; });
+  saveCfg('Settings updated (staff, add-ons, rules, objections)').then(function(){ alert('Saved.'); renderPrices(); });
+}
+
+/* ===== Lenskart ===== */
+function renderLk(){
+  var own = isOwner();
+  var h = '<div class="card"><h2>Lenskart Gold prices</h2><div class="mut">Compare like for like: lens type, coatings, warranty, what is included. Prices older than 15 days are marked "check again".</div></div>';
+  if (own) {
+    h += '<div class="card"><h3>Add a price check</h3>';
+    h += '<div class="row"><div><label>Date checked</label><input id="k_date" type="date" value="' + today() + '"></div><div><label>Type</label><select id="k_cat"><option value="sv">Single vision</option><option value="bif">Bifocal</option><option value="prog">Progressive</option></select></div></div>';
+    h += '<label>Lenskart package / lens name</label><input id="k_name">';
+    h += '<div class="row"><div><label>Gold member price ₹</label><input id="k_gold" type="number"></div><div><label>Normal price ₹</label><input id="k_norm" type="number"></div></div>';
+    h += '<label>What is included (frame, coatings, pairs, warranty)</label><input id="k_feat">';
+    h += '<label>Our closest lens</label><select id="k_ours"><option value="">—</option>';
+    var all = CFG.sv.concat(CFG.prog);
+    for (var i = 0; i < all.length; i++) h += '<option value="' + all[i].id + '">' + esc(all[i].name) + ' (' + (all[i].p1 ? rs(all[i].p1) : rs(all[i].price)) + ')</option>';
+    h += '</select><label>Source (website, store visit, screenshot)</label><input id="k_src">';
+    h += '<button class="btn pri" onclick="saveLk()">Save</button></div>';
+  }
+  h += '<div class="card" id="lkList"><div class="mut">Loading…</div></div>';
+  $('view').innerHTML = h;
+  db.collection('sales_competitor').orderBy('date', 'desc').limit(60).get().then(function(snap){
+    var out = '';
+    snap.forEach(function(d){
+      var x = d.data(), age = daysAgo(x.date), ours = x.ours ? findTier(x.ours) : null;
+      out += '<div class="tier"><b>' + esc(CATS[x.cat] || '') + ': ' + esc(x.name) + '</b> ' + (age > 15 ? '<span class="tag no">check again (' + age + ' days)</span>' : '<span class="tag">' + age + ' days ago</span>');
+      out += '<div>Gold: <span class="price">' + rs(x.gold) + '</span>' + (x.norm ? ' · Normal ' + rs(x.norm) : '') + '</div>';
+      if (x.feat) out += '<div class="mut">Includes: ' + esc(x.feat) + '</div>';
+      if (ours) {
+        var op = ours.p1 ? ours.p2 : ours.price;
+        out += '<div class="say">Ours: <b>' + esc(ours.name) + '</b> ' + rs(op) + (ours.p1 ? ' for 2 pairs' : ' for 2 pairs') + ' incl. any generic frame. ' + esc(ours.f.map(fname).join(', ')) + '</div>';
+      }
+      out += '<div class="mut">' + esc(x.date) + (x.src ? ' · ' + esc(x.src) : '') + '</div>';
+      if (own) out += '<button class="btn sm del" onclick="delDoc(\'sales_competitor\',\'' + d.id + '\',renderLk)">Delete</button>';
+      out += '</div>';
+    });
+    $('lkList').innerHTML = out || '<div class="mut">No prices saved yet.</div>';
+  }).catch(function(err){ $('lkList').innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+}
+function saveLk(){
+  var rec = {date: $('k_date').value || today(), cat: $('k_cat').value, name: $('k_name').value.trim(), gold: +$('k_gold').value || 0, norm: +$('k_norm').value || 0, feat: $('k_feat').value.trim(), ours: $('k_ours').value, src: $('k_src').value.trim(), ts: Date.now(), by: USER.email};
+  if (!rec.name || !rec.gold) return alert('Enter the package name and Gold price.');
+  db.collection('sales_competitor').add(rec).then(renderLk).catch(function(err){ alert(err.message); });
+}
+function delDoc(col, id, after){ if (!confirm('Delete?')) return; db.collection(col).doc(id).delete().then(after); }
+
+/* ===== Changes ===== */
+var CH_TYPES = ['Offer','Price list','Signage','Product placement','Staff pitch','Other'];
+function changesBlockHtml(){
+  var own = isOwner();
+  var h = '<div class="card"><h2>Changes and verdicts</h2><div class="mut">Every change to offers, signage, placement or pitch. At each review, give each one a verdict: Keep, Fix or Stop. One main change per 15 days.</div>';
+  if (own) {
+    h += '<div class="tier"><h3>Add a change</h3><div class="row"><div><label>Date</label><input id="c_date" type="date" value="' + today() + '"></div><div><label>Type</label><select id="c_type">';
+    for (var i = 0; i < CH_TYPES.length; i++) h += '<option>' + CH_TYPES[i] + '</option>';
+    h += '</select></div></div><label>What changed (where, exact wording)</label><textarea id="c_what" style="min-height:70px"></textarea>';
+    h += '<label>Why (what the data showed)</label><input id="c_why"><label>Expected result</label><input id="c_exp" placeholder="e.g. conversion from 55% to 65%"><button class="btn pri" onclick="saveChange()">Save change</button></div>';
+  }
+  return h + '<div id="chList"><div class="mut">Loading…</div></div></div>';
+}
+function loadChanges(){
+  var own = isOwner();
+  db.collection('sales_changes').orderBy('ts', 'desc').limit(60).get().then(function(snap){
+    var out = '';
+    snap.forEach(function(d){
+      var x = d.data(), v = x.verdict || '';
+      out += '<div class="tier"><span class="tag">' + esc(x.type) + '</span> <span class="mut">' + esc(x.date) + ' · ' + daysAgo(x.date) + ' days ago</span>';
+      if (v) out += ' <span class="tag ' + (v === 'Stop' ? 'no' : '') + '">' + esc(v) + '</span>';
+      out += '<div><b>' + esc(x.what) + '</b></div>';
+      if (x.why) out += '<div class="mut">Why: ' + esc(x.why) + '</div>';
+      if (x.exp) out += '<div class="mut">Expected: ' + esc(x.exp) + '</div>';
+      if (own) {
+        out += '<label>Result</label><input id="o_' + d.id + '" value="' + esc(x.outcome || '') + '"><div>';
+        var vs = ['Keep','Fix','Stop'];
+        for (var i = 0; i < vs.length; i++) out += '<button class="btn sm' + (v === vs[i] ? ' on' : '') + '" onclick="saveVerdict(\'' + d.id + '\',\'' + vs[i] + '\')">' + vs[i] + '</button>';
+        out += '<button class="btn sm del" onclick="delDoc(\'sales_changes\',\'' + d.id + '\',renderReport)">Delete</button></div>';
+      } else if (x.outcome) out += '<div class="say">Result: ' + esc(x.outcome) + '</div>';
+      out += '</div>';
+    });
+    $('chList').innerHTML = out || '<div class="mut">No changes recorded yet.</div>';
+  }).catch(function(err){ $('chList').innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+}
+function saveVerdict(id, v){
+  db.collection('sales_changes').doc(id).update({verdict: v, outcome: $('o_' + id).value.trim(), reviewed: today()}).then(loadChanges).catch(function(err){ alert(err.message); });
+}
+function saveChange(){
+  var rec = {date: $('c_date').value || today(), type: $('c_type').value, what: $('c_what').value.trim(), why: $('c_why').value.trim(), exp: $('c_exp').value.trim(), outcome: '', verdict: '', ts: Date.now(), by: USER.email};
+  if (!rec.what) return alert('Describe what changed.');
+  db.collection('sales_changes').add(rec).then(renderReport).catch(function(err){ alert(err.message); });
+}
+</script>
+</body>
+</html>
