@@ -37,7 +37,9 @@ label{font-size:13px;color:var(--mut);display:block}
 .tier.rec{border:2px solid var(--red)}
 .kpi{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .kpi div{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px}
-.kpi b{display:block;font-size:20px}.kpi .kpiRange{display:block;color:var(--mut);font-size:11px;margin-top:3px}.dashSection{margin:12px 0 4px;font-weight:700}.dashTableRange{font-size:11px;color:var(--mut);font-weight:400}
+.kpi b{display:block;font-size:20px}
+.kpiRange{display:block;color:var(--mut);font-size:11px;margin-top:3px}
+.dashSection{margin:12px 0 4px;font-weight:700}
 table{width:100%;border-collapse:collapse;font-size:13px}
 td,th{padding:7px 4px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 .barw{background:#f0f0f3;border-radius:4px;height:8px;margin-top:3px}
@@ -250,7 +252,10 @@ function loadCfg(){
 
 function saveCfg(note){
   CFG.updated = today();
-  return db.collection('sales_config').doc('main').set(CFG).then(function(){
+  var updates = Object.assign({}, CFG);
+  // Price and settings edits must not overwrite a newer target from another session.
+  delete updates.targets;
+  return db.collection('sales_config').doc('main').set(updates, {mergeFields:Object.keys(updates)}).then(function(){
     if (note) {
       return db.collection('sales_changes').add({date: today(), type: 'Price list', what: note, why: '', outcome: '', ts: Date.now(), by: USER.email});
     }
@@ -692,7 +697,7 @@ function paceShare(d, N){
 function dashboardRange(p){
   var t = today(), from = t, to = t, label = 'Today';
   if (p === 'week') {
-    var d = new Date();
+    var d = new Date(t + 'T12:00:00');
     var dow = (d.getDay() + 6) % 7;
     from = addDays(t, -dow);
     label = 'This week';
@@ -710,8 +715,9 @@ function dashboardRange(p){
   return {from:from, to:to, label:label};
 }
 function rangeNote(rg){ return '<span class="kpiRange">' + esc(rg.from) + ' to ' + esc(rg.to) + '</span>'; }
+function dashboardCell(value, range){ return '<td>' + value + rangeNote(range) + '</td>'; }
 function periodButton(id, label){
-  return '<button class="btn sm' + (DASH_PERIOD === id ? ' on' : '') + '" onclick="DASH_PERIOD=\\'' + id + '\\';renderTarget()">' + label + '</button>';
+  return '<button class="btn sm' + (DASH_PERIOD === id ? ' on' : '') + '" aria-pressed="' + (DASH_PERIOD === id) + '" onclick="DASH_PERIOD=\'' + id + '\';renderTarget()">' + label + '</button>';
 }
 function renderTarget(){
   if (!MONTH) MONTH = monthKey(today());
@@ -720,14 +726,14 @@ function renderTarget(){
   var cur = monthKey(today());
   var d = key === cur ? +today().slice(8, 10) : (key < cur ? N : 0);
   var rg = dashboardRange(DASH_PERIOD);
-  var h = '<div class="card"><h2>Sales dashboard</h2><div class="mut">Choose a period. Every result below is calculated from logged customer records and shows its date range.</div><div style="margin-top:8px">' +
+  var h = '<div class="card"><h2>Sales dashboard</h2><div style="margin-top:8px">' +
     periodButton('today','Today') + periodButton('week','This week') + periodButton('month','This month') + periodButton('current15','Current 15 days') + periodButton('previous15','Previous 15 days') +
     '</div><div class="tag">Selected: ' + esc(rg.label) + ' · ' + esc(rg.from) + ' to ' + esc(rg.to) + '</div></div>';
   h += '<div class="card"><div class="row" style="align-items:center"><button class="btn sm" style="flex:0" onclick="MONTH=shiftMonth(MONTH,-1);renderTarget()">◀</button><h2 style="text-align:center;margin:0">' + monthLabel(key) + ' target</h2><button class="btn sm" style="flex:0" onclick="MONTH=shiftMonth(MONTH,1);renderTarget()">▶</button></div>';
   if (own) {
-    h += '<h3 style="margin-top:10px">' + (tg ? 'Update monthly targets' : 'Set monthly targets') + '</h3><div class="row"><div><label>Sales target ₹</label><input id="t_sales" type="number" min="0" value="' + (tg ? tg.sales : '') + '"></div><div><label>Bills target</label><input id="t_sales_bills" type="number" min="0" value="' + (tg ? (tg.bills != null ? tg.bills : tg.orders || 0) : '') + '"></div></div><button class="btn pri" onclick="saveTarget()">Save targets</button>';
+    h += '<h3 style="margin-top:10px">' + (tg ? 'Update monthly targets' : 'Set monthly targets') + '</h3><div class="row"><div><label for="t_sales">Sales target ₹</label><input id="t_sales" type="number" min="0.01" step="0.01" value="' + (tg ? esc(tg.sales) : '') + '"></div><div><label for="t_sales_bills">Bills target</label><input id="t_sales_bills" type="number" min="1" step="1" value="' + (tg ? esc(tg.bills != null ? tg.bills : tg.orders || '') : '') + '"></div></div><button class="btn pri" id="saveTargetButton" onclick="saveTarget()">Save targets</button>';
   }
-  h += '</div><div id="tgBody" class="card mut">' + (tg ? 'Loading…' : 'Set this month’s targets to see target progress.') + '</div>';
+  h += '</div><div id="tgBody" class="card mut">Loading sales…</div>';
   h += '<div class="card"><h3>Target change history</h3><div id="targetHistory" class="mut">Loading…</div></div>';
   h += '<div id="fuBody" class="card"><h3>Follow-ups due</h3><div class="mut">Loading…</div></div>';
   $('view').innerHTML = h;
@@ -735,54 +741,64 @@ function renderTarget(){
   loadTargetHistory(key);
   var p1 = fetchRange(rg.from, rg.to);
   var monthTo = key === cur ? today() : key + '-' + pad(N);
-  var p2 = fetchRange(key + '-01', monthTo);
+  var monthRange = {from:key + '-01', to:monthTo};
+  var p2 = !tg || d === 0 ? Promise.resolve([]) :
+    (rg.from === monthRange.from && rg.to === monthTo ? p1 : fetchRange(monthRange.from, monthTo));
+  var dashboard = $('tgBody');
   Promise.all([p1, p2]).then(function(res){
-    if (!$('tgBody')) return;
+    if ($('tgBody') !== dashboard) return;
     var selected = stats(res[0]), monthly = stats(res[1]);
     var body = '<h3>' + esc(rg.label) + ' performance</h3><div class="mut">' + esc(rg.from) + ' to ' + esc(rg.to) + '</div>';
     body += '<div class="kpi" style="margin-top:8px">';
     body += '<div>Net sales<b>' + rs(selected.rev) + '</b>' + rangeNote(rg) + '</div>';
     body += '<div>Bills<b>' + selected.b + '</b>' + rangeNote(rg) + '</div>';
     body += '<div>Customers logged<b>' + selected.n + '</b>' + rangeNote(rg) + '</div>';
-    body += '<div>Conversion<b>' + selected.conv + '%</b><span class="mut">' + selected.known + ' known outcomes · ' + selected.excluded + ' excluded</span>' + rangeNote(rg) + '</div>';
-    body += '<div>Average bill<b>' + rs(selected.avg) + '</b>' + rangeNote(rg) + '</div></div>';
-    body += '<div class="dashSection">Monthly target · ' + esc(monthLabel(key)) + '</div><div class="mut">' + key + '-01 to ' + monthTo + '</div>';
+    body += '<div>Conversion<b>' + (selected.known ? selected.conv + '%' : '—') + '</b><span class="mut">' + selected.known + ' known outcomes · ' + selected.excluded + ' excluded</span>' + rangeNote(rg) + '</div>';
+    body += '<div>Average bill<b>' + (selected.b ? rs(Math.round(selected.rev * 100 / selected.b) / 100) : '—') + '</b>' + rangeNote(rg) + '</div></div>';
+    body += '<div class="dashSection">Monthly target · ' + esc(monthLabel(key)) + '</div>';
     if (tg) {
       var salesTarget = +tg.sales || 0, billTarget = +(tg.bills != null ? tg.bills : tg.orders) || 0;
-      var daysElapsed = Math.max(0, Math.min(N, d));
-      var remainingDays = Math.max(0, N - daysElapsed);
-      var expected = Math.round(salesTarget * paceShare(daysElapsed, N));
+      var remainingDays = N - d;
+      var expected = Math.round(salesTarget * paceShare(d, N));
       var remainingSales = Math.max(0, salesTarget - monthly.rev);
-      var avgDaily = daysElapsed ? monthly.rev / daysElapsed : 0;
-      var neededDaily = remainingDays ? remainingSales / remainingDays : remainingSales;
-      body += '<div class="kpi"><div>Sales progress<b>' + rs(monthly.rev) + ' / ' + rs(salesTarget) + '</b><span class="mut">' + pct(monthly.rev, salesTarget) + '% · ' + (monthly.rev >= expected ? 'on pace' : 'behind pace by ' + rs(expected - monthly.rev)) + '</span><span class="kpiRange">' + key + '-01 to ' + monthTo + '</span></div>';
-      body += '<div>Bills progress<b>' + monthly.b + ' / ' + (billTarget || '—') + '</b><span class="mut">' + (billTarget ? pct(monthly.b, billTarget) + '% of target' : 'No bill target set') + '</span><span class="kpiRange">' + key + '-01 to ' + monthTo + '</span></div>';
-      body += '<div>Still needed<b>' + rs(remainingSales) + '</b><span class="mut">to monthly sales target</span><span class="kpiRange">' + key + '-01 to ' + monthTo + '</span></div>';
-      body += '<div>Daily sales pace<b>' + rs(Math.round(avgDaily)) + ' / day</b><span class="mut">' + rs(Math.round(neededDaily)) + ' / remaining day needed · ' + remainingDays + ' days left</span><span class="kpiRange">' + key + '-01 to ' + monthTo + '</span></div></div>';
+      var remainingBills = Math.max(0, billTarget - monthly.b);
+      body += '<div class="kpi"><div>Sales progress<b>' + rs(monthly.rev) + ' / ' + rs(salesTarget) + '</b><span class="mut">' + pct(monthly.rev, salesTarget) + '% · ' + (monthly.rev >= expected ? 'on pace' : 'behind pace by ' + rs(expected - monthly.rev)) + '</span>' + rangeNote(monthRange) + '</div>';
+      body += '<div>Bills progress<b>' + monthly.b + ' / ' + (billTarget || '—') + '</b><span class="mut">' + (billTarget ? pct(monthly.b, billTarget) + '% of target' : 'No bill target set') + '</span>' + rangeNote(monthRange) + '</div>';
+      if (d) {
+        body += '<div>Recorded sales per day<b>' + rs(Math.round(monthly.rev * 100 / d) / 100) + '</b>' + rangeNote(monthRange) + '</div>';
+        body += '<div>Recorded bills per day<b>' + (monthly.b / d).toFixed(1) + '</b>' + rangeNote(monthRange) + '</div>';
+      }
+      if (remainingDays || key === cur) {
+        var remainingRange = {from:d && remainingDays ? addDays(monthTo, 1) : monthRange.from, to:key + '-' + pad(N)};
+        if (!remainingDays) remainingRange.from = monthTo;
+        var days = Math.max(1, remainingDays);
+        body += '<div>' + (remainingDays ? 'Sales needed per remaining day' : 'Sales still needed today') + '<b>' + rs(Math.ceil(remainingSales * 100 / days) / 100) + '</b>' + rangeNote(remainingRange) + '</div>';
+        if (billTarget) body += '<div>' + (remainingDays ? 'Bills needed per remaining day (average)' : 'Bills still needed today') + '<b>' + (remainingBills / days).toFixed(1) + '</b>' + rangeNote(remainingRange) + '</div>';
+      }
+      body += '</div>';
     } else {
       body += '<div class="note">No sales or bill target is set for ' + esc(monthLabel(key)) + '. The owner can enter both above.</div>';
     }
-    body += '<div class="dashSection">Sales by category <span class="dashTableRange">' + esc(rg.from) + ' to ' + esc(rg.to) + '</span></div><table><tr><th>Category</th><th>Bills</th><th>Net sales</th></tr>';
+    body += '<div class="dashSection">Sales by category</div><table><tr><th>Category</th><th>Bills</th><th>Net sales</th></tr>';
     var catKeys = Object.keys(selected.cats);
     if (!catKeys.length) body += '<tr><td colspan="3">No records in this period.</td></tr>';
     for (var ci = 0; ci < catKeys.length; ci++) {
       var catKey = catKeys[ci], cs = selected.cats[catKey];
-      body += '<tr><td>' + esc(CATS[catKey] || catKey) + '</td><td>' + cs.b + '</td><td>' + rs(cs.rev) + '</td></tr>';
+      body += '<tr><td>' + esc(CATS[catKey] || catKey) + '</td>' + dashboardCell(cs.b, rg) + dashboardCell(rs(cs.rev), rg) + '</tr>';
     }
-    body += '</table><div class="dashSection">Sales by staff <span class="dashTableRange">' + esc(rg.from) + ' to ' + esc(rg.to) + '</span></div><table><tr><th>Staff</th><th>Customers</th><th>Bills</th><th>Net sales</th></tr>';
-    for (var si = 0; si < STAFF_LABELS.length; si++) {
-      var staffName = STAFF_LABELS[si], st = selected.staff[staffName] || {n:0,b:0,rev:0};
-      body += '<tr><td>' + staffName + '</td><td>' + st.n + '</td><td>' + st.b + '</td><td>' + rs(st.rev) + '</td></tr>';
+    body += '</table><div class="dashSection">Sales by staff</div><table><tr><th>Staff</th><th>Customers</th><th>Bills</th><th>Net sales</th></tr>';
+    var staffRows = selected.staff.Unassigned ? STAFF_LABELS.concat('Unassigned') : STAFF_LABELS;
+    for (var si = 0; si < staffRows.length; si++) {
+      var staffName = staffRows[si], st = selected.staff[staffName] || {n:0,b:0,rev:0};
+      body += '<tr><td>' + staffName + '</td>' + dashboardCell(st.n, rg) + dashboardCell(st.b, rg) + dashboardCell(rs(st.rev), rg) + '</tr>';
     }
-    var un = selected.staff['Unassigned'] || {n:0,b:0,rev:0};
-    if (un.n) body += '<tr><td>Unassigned (older logs)</td><td>' + un.n + '</td><td>' + un.b + '</td><td>' + rs(un.rev) + '</td></tr>';
-    body += '</table><div class="dashSection">Lost-sale reasons <span class="dashTableRange">' + esc(rg.from) + ' to ' + esc(rg.to) + '</span></div>';
+    body += '</table><div class="dashSection">Lost-sale reasons</div>';
     var reasons = Object.keys(selected.reasons).sort(function(a,b){ return selected.reasons[b] - selected.reasons[a]; });
     if (!reasons.length) body += '<div class="mut">No lost sales recorded in this period.</div>';
-    for (var ri = 0; ri < reasons.length; ri++) body += '<div class="tier">' + esc(reasons[ri]) + '<b style="float:right">' + selected.reasons[reasons[ri]] + '</b><span class="kpiRange">' + esc(rg.from) + ' to ' + esc(rg.to) + '</span></div>';
-    $('tgBody').className = 'card';
-    $('tgBody').innerHTML = body;
-  }).catch(function(err){ if ($('tgBody')) $('tgBody').innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+    for (var ri = 0; ri < reasons.length; ri++) body += '<div class="tier">' + esc(reasons[ri]) + ' · <b>' + selected.reasons[reasons[ri]] + '</b>' + rangeNote(rg) + '</div>';
+    dashboard.className = 'card';
+    dashboard.innerHTML = body;
+  }).catch(function(err){ dashboard.innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
 }
 function loadTargetHistory(key){
   var el = $('targetHistory');
@@ -792,7 +808,13 @@ function loadTargetHistory(key){
     rows.sort(function(a,b){ return (b.changedAt || 0) - (a.changedAt || 0); });
     if (!rows.length) { el.innerHTML = '<span class="mut">No target changes recorded for this month yet.</span>'; return; }
     var html = '<table><tr><th>Changed</th><th>Sales target</th><th>Bills target</th><th>By</th></tr>';
-    for (var i = 0; i < rows.length; i++) html += '<tr><td>' + esc(rows[i].changedDate || '') + '</td><td>' + rs(rows[i].sales) + '</td><td>' + (+rows[i].bills || 0) + '</td><td>' + esc(rows[i].by || '') + '</td></tr>';
+    var range = {from:key + '-01', to:key + '-' + pad(daysInMonth(key))};
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var sales = (row.previousSales > 0 ? rs(row.previousSales) + ' → ' : '') + rs(row.sales);
+      var bills = (row.previousBills > 0 ? (+row.previousBills) + ' → ' : '') + (+row.bills || 0);
+      html += '<tr><td>' + esc(row.changedDate || '') + '</td>' + dashboardCell(sales, range) + dashboardCell(bills, range) + '<td>' + esc(row.by || '') + '</td></tr>';
+    }
     el.innerHTML = html + '</table>';
   }).catch(function(err){ el.innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
 }
@@ -825,28 +847,49 @@ function groupTable(title, obj){
   return h + '</table>';
 }
 function saveTarget(){
-  var sales = Math.max(0, +$('t_sales').value || 0);
-  var bills = Math.max(0, +$('t_sales_bills').value || 0);
-  if (!sales || !bills) return alert('Enter both the monthly sales and bill targets.');
-  if (!CFG.targets) CFG.targets = {};
-  var old = CFG.targets[MONTH] || {};
-  var oldBills = +(old.bills != null ? old.bills : old.orders) || 0;
-  var changed = +old.sales !== sales || oldBills !== bills;
-  CFG.targets[MONTH] = {sales:sales, orders:bills, bills:bills};
-  saveCfg('').then(function(){
-    if (!changed) { renderTarget(); return; }
-    db.collection('sales_target_history').add({
-      month:MONTH, sales:sales, bills:bills,
-      previousSales:+old.sales || 0, previousBills:oldBills,
-      changedAt:Date.now(), changedDate:today(), by:USER.email
-    }).then(renderTarget).catch(function(err){ alert('Target saved, but history could not be saved: ' + err.message); renderTarget(); });
-  });
+  if (!isOwner()) return;
+  var button = $('saveTargetButton');
+  if (button.disabled) return;
+  var sales = +$('t_sales').value, bills = +$('t_sales_bills').value;
+  if (!Number.isFinite(sales) || sales <= 0 || !Number.isSafeInteger(bills) || bills <= 0) {
+    return alert('Enter a positive sales target and a positive whole number of bills.');
+  }
+  var key = MONTH, user = USER, config = CFG, date = today(), changedAt = Date.now();
+  var configRef = db.collection('sales_config').doc('main');
+  var historyRef = db.collection('sales_target_history').doc();
+  button.disabled = true;
+  return db.runTransaction(function(transaction){
+    return transaction.get(configRef).then(function(doc){
+      var current = doc.data();
+      if (!current || !current.ownerEmail || current.ownerEmail.toLowerCase() !== user.email.toLowerCase()) throw new Error('Only the owner can save targets.');
+      var old = (current.targets && current.targets[key]) || {};
+      var oldBills = +(old.bills != null ? old.bills : old.orders) || 0;
+      if (+old.sales === sales && oldBills === bills) return old;
+      var target = Object.assign({}, old, {sales:sales, orders:bills, bills:bills});
+      var updates = {};
+      updates['targets.' + key] = target;
+      transaction.update(configRef, updates);
+      transaction.set(historyRef, {
+        month:key, sales:sales, bills:bills,
+        previousSales:+old.sales || 0, previousBills:oldBills,
+        changedAt:changedAt, changedDate:date, by:user.email
+      });
+      return target;
+    });
+  }).then(function(target){
+    if (CFG !== config || USER !== user) return;
+    if (!CFG.targets) CFG.targets = {};
+    CFG.targets[key] = target;
+    if (TAB === 'target' && MONTH === key) renderTarget();
+  }).catch(function(err){
+    if (USER === user) alert('Targets could not be saved: ' + err.message);
+  }).then(function(){ button.disabled = false; });
 }
 function diagnosisHtml(s, ps){
   var out = [];
   if (!s.n) return '';
   var top = Object.keys(s.reasons).sort(function(a, c){ return s.reasons[c] - s.reasons[a]; });
-  if (top.length) out.push('Biggest reason for lost sales: <b>' + esc(top[0]) + '</b> (' + pct(s.reasons[top[0]], s.n - s.b) + '% of lost customers).');
+  if (top.length) out.push('Biggest reason for lost sales: <b>' + esc(top[0]) + '</b> (' + pct(s.reasons[top[0]], s.known - s.b) + '% of lost customers).');
   if (s.lkN >= 3 && pct(s.lkB, s.lkN) < s.conv) out.push('Customers who compared with Lenskart convert worse (' + pct(s.lkB, s.lkN) + '% vs ' + s.conv + '%). Fix the Lenskart comparison: card, signage, pitch.');
   if (ps && ps.n) {
     if (s.n < ps.n) out.push('Fewer logged customers (' + s.n + ' vs ' + ps.n + '). Check whether walk-ins dropped or some visits went unlogged.');
@@ -880,30 +923,36 @@ function fetchRange(from, to){
   });
 }
 function staffLabel(value){
-  return STAFF_LABELS.indexOf(value) >= 0 ? value : 'Unassigned (older logs)';
+  return STAFF_LABELS.indexOf(value) >= 0 ? value : 'Unassigned';
 }
 function stats(rows){
-  var s = {n:0, known:0, excluded:0, b:0, rev:0, staff:{}, reasons:{}, tiers:{}, cats:{}, lkN:0, lkB:0, addon:0, att:0, src:{}, cust:{}, test:{}, fuOpen:0, fuWon:0, fuLost:0};
+  var s = {n:0, known:0, excluded:0, b:0, rev:0, staff:{}, reasons:Object.create(null), tiers:Object.create(null), cats:Object.create(null), lkN:0, lkB:0, addon:0, att:0, src:Object.create(null), cust:{}, test:{}, fuOpen:0, fuWon:0, fuLost:0};
   for (var i = 0; i < rows.length; i++) {
-    var r = rows[i], staff = staffLabel(r.staff), outcomeKnown = r.bought === true || r.bought === false;
+    var r = rows[i], staff = staffLabel(r.staff), category = r.cat || 'Unassigned';
+    var outcomeKnown = r.bought === true || r.bought === false;
+    var amount = Number(r.amount);
+    if (!Number.isFinite(amount)) amount = 0;
     s.n++;
     if (outcomeKnown) s.known++; else s.excluded++;
     if (!s.staff[staff]) s.staff[staff] = {n:0,b:0,rev:0};
     s.staff[staff].n++;
-    if (!s.cats[r.cat]) s.cats[r.cat] = {n:0,b:0,rev:0};
-    s.cats[r.cat].n++;
-    if (r.lk) { s.lkN++; if (r.bought) s.lkB++; }
+    if (!s.cats[category]) s.cats[category] = {n:0,b:0,rev:0};
+    s.cats[category].n++;
+    if (r.lk) { s.lkN++; if (r.bought === true) s.lkB++; }
     var groups = [['src', r.src || 'Not recorded'], ['cust', r.cust === 'rep' ? 'Repeat' : (r.cust === 'new' ? 'New' : 'Not recorded')], ['test', r.test === true ? 'Tested here' : (r.test === false ? 'Not tested here' : 'Not recorded')]];
-    for (var g = 0; g < groups.length; g++) { var gk = groups[g][0], gv = groups[g][1]; if (!s[gk][gv]) s[gk][gv] = {n:0,b:0,rev:0}; s[gk][gv].n++; if (r.bought === true) { s[gk][gv].b++; s[gk][gv].rev += r.amount || 0; } }
+    for (var g = 0; g < groups.length; g++) { var gk = groups[g][0], gv = groups[g][1]; if (!s[gk][gv]) s[gk][gv] = {n:0,b:0,rev:0}; s[gk][gv].n++; if (r.bought === true) { s[gk][gv].b++; s[gk][gv].rev += amount; } }
     if (r.fu === 'open') s.fuOpen++; else if (r.fu === 'won') s.fuWon++; else if (r.fu === 'lost') s.fuLost++;
     if (r.bought === true) {
-      s.b++; s.rev += r.amount || 0;
-      s.staff[staff].b++; s.staff[staff].rev += r.amount || 0;
-      s.cats[r.cat].b++; s.cats[r.cat].rev += r.amount || 0;
+      s.b++; s.rev += amount;
+      s.staff[staff].b++; s.staff[staff].rev += amount;
+      s.cats[category].b++; s.cats[category].rev += amount;
       if (r.tierName) { var key = (CATS[r.cat] || r.cat) + ': ' + r.tierName; s.tiers[key] = (s.tiers[key] || 0) + 1; }
       if (r.addons && r.addons.length) s.addon++;
       if (r.frame === 'att') s.att++;
-    } else if (r.bought === false && r.reason) { s.reasons[r.reason] = (s.reasons[r.reason] || 0) + 1; }
+    } else if (r.bought === false) {
+      var reason = r.reason || 'Not recorded';
+      s.reasons[reason] = (s.reasons[reason] || 0) + 1;
+    }
   }
   s.conv = pct(s.b, s.known);
   s.avg = s.b ? Math.round(s.rev / s.b) : 0;
@@ -970,7 +1019,7 @@ function renderReport(){
     h2 += groupTable('New vs repeat', s.cust);
     h2 += groupTable('Eye test here vs outside', s.test);
     h2 += '<div class="sec">Follow-ups</div><div class="mut">Won back ' + s.fuWon + ' · lost ' + s.fuLost + ' · still open ' + s.fuOpen + '</div>';
-    h2 += '<div class="sec">Why customers did not buy</div>' + bars(s.reasons, s.n - s.b);
+    h2 += '<div class="sec">Why customers did not buy</div>' + bars(s.reasons, s.known - s.b);
     h2 += '<div class="sec">What sold</div>' + bars(s.tiers, s.b);
     h2 += '<div style="margin-top:14px"><button class="btn pri" onclick="copyReview()">Copy data for 15-day review</button></div>';
     $('rep').className = 'card';
