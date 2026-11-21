@@ -1280,84 +1280,189 @@ function archiveCampaign(id){
 
 /* ===== Lenskart ===== */
 function renderLk(){
-  var own = isOwner();
-  var h = '<div class="card"><h2>Launchpad · Lenskart price audit</h2><div class="mut">Enter offers from a report, quote or screenshot. Confirm the same number of pairs, frame inclusion, lens features and warranty before quoting a saving.</div></div>';
-  if (own) {
-    h += '<div class="card"><h3>Add a price check</h3>';
-    h += '<div class="row"><div><label>Date checked</label><input id="k_date" type="date" value="' + today() + '"></div><div><label>Type</label><select id="k_cat" onchange="previewAudit()"><option value="sv">Single vision</option><option value="bif">Bifocal</option><option value="prog">Progressive</option></select></div></div>';
-    h += '<label>Lenskart package / lens name</label><input id="k_name">';
-    h += '<div class="row"><div><label>Gold member price ₹</label><input id="k_gold" type="number"></div><div><label>Normal price ₹</label><input id="k_norm" type="number"></div></div>';
-    h += '<label>What is included (frame, coatings, pairs, warranty)</label><input id="k_feat">';
-    h += '<div class="row"><div><label>Pairs in offer</label><select id="k_pairs" onchange="previewAudit()"><option value="2">2 pairs</option><option value="1">1 pair</option></select></div><div><label>Our frame</label><select id="k_frame" onchange="previewAudit()"><option value="reg">Regular</option><option value="att">Attachment</option></select></div></div>';
-    h += '<label>Our package</label><select id="k_ours" onchange="previewAudit()"><option value="">Choose a package</option>';
-    var all = CFG.sv.concat(CFG.prog);
-    for (var i = 0; i < all.length; i++) h += '<option value="' + esc(all[i].id) + '">' + esc(all[i].name) + '</option>';
-    h += '</select><label>Source (report, website, store visit, screenshot)</label><input id="k_src">';
-    h += '<div id="k_preview"></div><label><input type="checkbox" id="k_match" style="width:auto"> I checked that the frame, pairs, lens features and warranty match the selected Eyeland package.</label>';
-    h += '<button class="btn pri" onclick="saveLk()">Save</button></div>';
-  }
-  h += '<div class="card" id="lkList"><div class="mut">Loading…</div></div>';
-  $('view').innerHTML = h;
+  $('view').innerHTML = '<div class="card"><h2>Launchpad · Lenskart comparison</h2><div class="mut">Use the price the customer qualifies for. An offer needs verified matching terms and a current check to show a price difference.</div></div>' +
+    (isOwner() ? '<div id="offerForm" class="card"></div>' : '') + '<div class="card" id="lkList"><div class="mut">Loading…</div></div>';
+  if (isOwner()) offerForm({});
   var list = $('lkList');
-  db.collection('sales_competitor').orderBy('date', 'desc').limit(60).get().then(function(snap){
-    var out = '';
-    snap.forEach(function(d){
-      var x = d.data(), age = daysAgo(x.date), ours = x.ours ? findTier(x.ours) : null;
-      out += '<div class="tier"><b>' + esc(CATS[x.cat] || '') + ': ' + esc(x.name) + '</b> ' + (age >= 15 ? '<span class="tag no">check again (' + age + ' days)</span>' : '<span class="tag">' + age + ' days ago</span>');
-      out += '<div>' + (x.gold ? 'Gold: <span class="price">' + rs(x.gold) + '</span>' : '') + (x.gold && x.norm ? ' · ' : '') + (x.norm ? 'Normal: ' + rs(x.norm) : '') + '</div>';
-      if (x.feat) out += '<div class="mut">Includes: ' + esc(x.feat) + '</div>';
-      out += auditComparison(x, ours, age);
-      out += '<div class="mut">' + esc(x.date) + (x.src ? ' · ' + esc(x.src) : '') + '</div>';
-      if (own) out += '<button class="btn sm del" onclick="delDoc(\'sales_competitor\',\'' + d.id + '\',renderLk)">Delete</button>';
-      out += '</div>';
-    });
-    list.innerHTML = out || '<div class="mut">No prices saved yet.</div>';
-  }).catch(function(err){ list.innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+  db.collection('sales_competitor').get().then(function(snap){
+    var offers = [];
+    snap.forEach(function(doc){ var offer = doc.data(); offer.id = doc.id; offers.push(offer); });
+    offers.sort(function(a,b){ return String(b.date || '').localeCompare(String(a.date || '')) || (b.ts || 0) - (a.ts || 0); });
+    list.innerHTML = offers.map(offerCard).join('') || '<div class="mut">No offers saved yet.</div>';
+  }).catch(function(err){ list.textContent = err.message; });
 }
-function previewAudit(){
-  $('k_match').checked = false;
-  var offer = {cat:$('k_cat').value, frame:$('k_frame').value, pairs:+$('k_pairs').value};
-  var ours = findTier($('k_ours').value);
-  $('k_preview').innerHTML = ours ? auditComparison(offer, ours, 0) : '';
+function auditOptions(options, selected){
+  return options.map(function(option){
+    return '<option value="' + esc(option[0]) + '"' + (String(selected == null ? '' : selected) === String(option[0]) ? ' selected' : '') + '>' + esc(option[1]) + '</option>';
+  }).join('');
+}
+function offerForm(x){
+  var h = '<h3>' + (x.id ? 'Edit or recheck offer' : 'Add a price check') + '</h3>';
+  h += '<label for="k_name">Lenskart package / lens name</label><input id="k_name" value="' + esc(x.name) + '">';
+  h += '<div class="row"><div><label for="k_date">Date checked</label><input id="k_date" type="date" max="' + today() + '" value="' + esc(x.id ? x.date : today()) + '"></div>';
+  h += '<div><label for="k_link">Offer link</label><input id="k_link" type="url" value="' + esc(x.link) + '"></div></div>';
+  h += '<div class="row"><div><label for="k_gold">Gold price ₹</label><input id="k_gold" type="number" min="0" step="0.01" value="' + esc(x.gold || '') + '"></div>';
+  h += '<div><label for="k_norm">Regular price ₹</label><input id="k_norm" type="number" min="0" step="0.01" value="' + esc(x.norm || '') + '"></div></div>';
+  h += '<div class="row"><div><label for="k_cat">Lens type</label><select id="k_cat" onchange="previewAudit()">' +
+    auditOptions([['','Unknown'],['sv','Single vision'],['bif','Bifocal'],['prog','Progressive']],x.cat) + '</select></div>';
+  h += '<div><label for="k_pairs">Number of pairs</label><select id="k_pairs" onchange="previewAudit()">' +
+    auditOptions([['','Unknown'],[1,'1 pair'],[2,'2 pairs']],x.pairs || '') + '</select></div></div>';
+  h += '<div class="row"><div><label for="k_included">Lenskart frame included?</label><select id="k_included" onchange="previewAudit()">' +
+    auditOptions([['','Unknown'],['yes','Yes'],['no','No']],x.frameIncluded === true ? 'yes' : (x.frameIncluded === false ? 'no' : '')) + '</select></div>';
+  h += '<div><label for="k_offer_frame">Lenskart frame type</label><select id="k_offer_frame" onchange="previewAudit()">' +
+    auditOptions([['','Unknown'],['reg','Regular'],['att','Attachment']],x.offerFrame) + '</select></div></div>';
+  h += '<label for="k_warranty">Warranty (e.g. 6 months or None)</label><input id="k_warranty" value="' + esc(x.warranty) + '" oninput="previewAudit()">';
+  h += '<fieldset><legend>Coatings and lens features</legend><label><input id="k_coatings_checked" type="checkbox" style="width:auto" onchange="previewAudit()"' +
+    (Array.isArray(x.coatings) ? ' checked' : '') + '> Coatings verified (leave the choices empty if there are none)</label>';
+  var features = Object.keys(CFG.features).filter(function(key){ return key !== 'thin' && key !== 'corridor' && key !== 'adapt'; });
+  for (var i = 0; i < features.length; i++) {
+    var key = features[i];
+    h += '<label><input class="k_coating" type="checkbox" style="width:auto" value="' + esc(key) + '" onchange="previewAudit()"' +
+      (Array.isArray(x.coatings) && x.coatings.indexOf(key) >= 0 ? ' checked' : '') + '> ' + esc(fname(key)) + '</label>';
+  }
+  h += '<label for="k_extra">Other coatings or lens features</label><input id="k_extra" value="' + esc(x.extraCoatings) + '" oninput="previewAudit()"></fieldset>';
+  h += '<label for="k_feat">Offer details / existing notes</label><input id="k_feat" value="' + esc(x.feat) + '">';
+  h += '<label for="k_src">Source notes</label><input id="k_src" value="' + esc(x.src) + '">';
+  h += '<div class="row"><div><label for="k_ours">Eyeland package</label><select id="k_ours" onchange="previewAudit()">' +
+    auditOptions([['','Choose a package']].concat(CFG.sv.concat(CFG.prog).map(function(t){ return [t.id,t.name]; })),x.ours) + '</select></div>';
+  h += '<div><label for="k_frame">Eyeland frame</label><select id="k_frame" onchange="previewAudit()">' +
+    auditOptions([['reg','Regular'],['att','Attachment']],x.frame || 'reg') + '</select></div></div>';
+  h += '<div id="k_preview"></div><label><input id="k_match" type="checkbox" style="width:auto"> I checked that frame eligibility, lens specifications, warranty coverage and any other terms match, and that the entered prices apply to those same terms.</label>';
+  h += '<button class="btn pri" data-id="' + esc(x.id) + '" onclick="saveLk(this)">Save offer</button>' +
+    (x.id ? '<button class="btn sm" onclick="offerForm({})">Cancel</button>' : '');
+  $('offerForm').innerHTML = h;
+  previewAudit();
+}
+function auditLink(value){
+  try {
+    var url = new URL(value);
+    return (url.protocol === 'https:' || url.protocol === 'http:') && !url.username && !url.password ? url.href : '';
+  } catch (err){ return ''; }
+}
+function auditWarranty(value){
+  var term = String(value || '').trim().toLowerCase();
+  var duration = term.match(/^(\d+)\s*(month|year)s?$/);
+  return duration ? String(+duration[1] * (duration[2] === 'year' ? 12 : 1)) + ' months' : term;
+}
+function auditFrame(x){ return x.cat === 'bif' ? 'att' : x.frame; }
+function auditFeatures(x, ours){
+  return featsOf(ours,x.cat,auditFrame(x)).filter(function(key){ return key !== 'thin' && key !== 'corridor' && key !== 'adapt'; }).slice().sort();
 }
 function auditPrice(x, ours){
   if (!ours || ['sv','bif','prog'].indexOf(x.cat) < 0 || tiersFor(x.cat).indexOf(ours) < 0) return null;
   if (x.pairs !== 2 && (x.cat !== 'prog' || x.pairs !== 1)) return null;
-  return priceOf(ours, x.cat, x.frame, x.pairs);
+  return priceOf(ours,x.cat,auditFrame(x),x.pairs);
 }
 function auditTerms(x, ours){
-  return JSON.stringify([x.cat, x.cat === 'bif' ? 'att' : x.frame, x.pairs, featsOf(ours, x.cat, x.frame).slice().sort(), ours.war || '', ours.thin || 0, ours.cor || 0]);
+  return JSON.stringify([ours.id,x.cat,auditFrame(x),x.pairs,featsOf(ours,x.cat,auditFrame(x)).slice().sort(),
+    auditWarranty(ours.war),ours.thin || 0,ours.cor || 0,x.link,x.date,x.gold,x.norm]);
 }
-function auditComparison(x, ours, age){
-  var price = auditPrice(x, ours);
-  if (price == null) return '<div class="mut">No comparable Eyeland price for these pairs and lens type.</div>';
-  var frame = x.cat === 'bif' || x.frame === 'att' ? 'attachment frame' : 'regular frame';
-  var h = '<div class="say">Eyeland: <b>' + esc(ours.name) + '</b> ' + rs(price) + ' for ' + x.pairs + (x.pairs === 1 ? ' pair' : ' pairs') + ' · ' + frame + '. ' + esc(featsOf(ours, x.cat, x.frame).map(fname).join(', ')) + (ours.war ? ' · Warranty ' + esc(ours.war) : '') + '</div>';
-  if (age < 0 || age >= 15 || !x.auditTerms || x.auditTerms !== auditTerms(x, ours)) {
-    return h + '<div class="mut">Confirm the offer and matching terms before quoting a price difference.</div>';
-  }
-  if (x.gold > 0) h += '<div>Compared with Gold: ' + auditDifference(x.gold - price) + '</div>';
-  if (x.norm > 0) h += '<div>Compared with normal price: ' + auditDifference(x.norm - price) + '</div>';
-  return h + '<div class="mut">Use the price the customer qualifies for. To test a price change, use Prices and check conversion and sales in Review after 15 days.</div>';
+function auditIssues(x, ours){
+  var issues = [];
+  if (!auditLink(x.link)) issues.push('offer link missing or invalid');
+  if (!x.date || x.date > today()) issues.push('valid check date missing');
+  if (['sv','bif','prog'].indexOf(x.cat) < 0) issues.push('lens type missing');
+  else if (ours && tiersFor(x.cat).indexOf(ours) < 0) issues.push('lens type differs');
+  if (x.pairs !== 1 && x.pairs !== 2) issues.push('number of pairs missing');
+  else if (x.pairs === 1 && x.cat !== 'prog') issues.push('number of pairs differs');
+  if (x.frameIncluded == null) issues.push('frame inclusion missing');
+  else if (x.frameIncluded !== true) issues.push('Lenskart frame excluded');
+  else if (x.offerFrame !== 'reg' && x.offerFrame !== 'att') issues.push('Lenskart frame type missing');
+  else if (x.offerFrame !== auditFrame(x)) issues.push('frame type differs');
+  if (!Array.isArray(x.coatings)) issues.push('coatings not verified');
+  else if (ours && JSON.stringify(x.coatings.slice().sort()) !== JSON.stringify(auditFeatures(x,ours))) issues.push('coatings or lens features differ');
+  if (x.extraCoatings) issues.push('additional coatings or features have no matching Eyeland terms');
+  if (!auditWarranty(x.warranty)) issues.push('Lenskart warranty missing');
+  else if (ours && !auditWarranty(ours.war)) issues.push('Eyeland warranty terms unavailable');
+  else if (ours && auditWarranty(x.warranty) !== auditWarranty(ours.war)) issues.push('warranty differs');
+  if (!ours) issues.push('Eyeland package missing');
+  else if (!(auditPrice(x,ours) > 0)) issues.push('no Eyeland price for the selected lens, frame and pair count');
+  return issues;
 }
-function auditDifference(diff){
+function auditComparison(x, ours, preview){
+  var price = auditPrice(x,ours), issues = auditIssues(x,ours);
+  var stale = x.date && x.date < addDays(today(),-15);
+  var h = '';
+  if (price != null) h += '<div class="say">Eyeland ' + esc(ours.name) + ' · ' + rs(price) + ' for ' + x.pairs +
+    (x.pairs === 1 ? ' pair' : ' pairs') + ' · ' + (auditFrame(x) === 'att' ? 'attachment frame' : 'regular frame') +
+    '<br>' + esc(auditFeatures(x,ours).map(fname).join(', ') || 'No coatings listed') + ' · Warranty ' + esc(ours.war || 'unavailable') + '</div>';
+  if (stale) issues.push('Recheck due');
+  if (!issues.length && !preview && x.auditTerms !== auditTerms(x,ours)) issues.push('matching terms not verified or terms have changed');
+  if (issues.length) return h + '<div class="note"><b>Not comparable</b> · ' + esc(issues.join('; ')) + '</div>';
+  if (preview) return h + '<div class="mut">Recorded terms match. Verify the remaining terms before saving.</div>';
+  return h + '<div>Gold: ' + auditDifference(x.gold,price) + '</div><div>Regular: ' + auditDifference(x.norm,price) + '</div>';
+}
+function auditDifference(competitor, price){
+  if (!(competitor > 0)) return 'Not comparable · price missing';
+  var diff = Math.round((competitor - price) * 100) / 100;
   if (!diff) return 'Same price';
-  return 'Eyeland is ' + rs(Math.abs(diff)) + (diff > 0 ? ' lower' : ' higher');
+  return 'Eyeland ' + (diff > 0 ? 'cheaper' : 'costlier') + ' by ' + rs(Math.abs(diff));
 }
-function saveLk(){
-  var rec = {date: $('k_date').value || today(), cat: $('k_cat').value, name: $('k_name').value.trim(), gold: +$('k_gold').value || 0, norm: +$('k_norm').value || 0, feat: $('k_feat').value.trim(), ours: $('k_ours').value, src: $('k_src').value.trim(), ts: Date.now(), by: USER.email};
-  rec.pairs = +$('k_pairs').value;
-  rec.frame = rec.cat === 'bif' ? 'att' : $('k_frame').value;
-  if (!rec.name || rec.gold < 0 || rec.norm < 0 || (!rec.gold && !rec.norm)) return alert('Enter the package name and at least one price above zero.');
-  if (rec.date > today()) return alert('Use the date the offer was checked.');
-  if ($('k_match').checked) {
-    var ours = findTier(rec.ours);
-    if (!rec.feat || !rec.src || auditPrice(rec, ours) == null) return alert('Enter the offer details and source, and choose a package with a price for this lens type and pair count.');
-    rec.auditTerms = auditTerms(rec, ours);
+function offerCard(x){
+  var stale = x.date && x.date < addDays(today(),-15), link = auditLink(x.link);
+  var h = '<div class="tier"><h3>' + esc(x.name) + (stale ? ' <span class="tag no">Recheck due</span>' : '') + '</h3>';
+  h += '<div class="mut">Checked ' + esc(x.date || '—') + (link ? ' · <a href="' + esc(link) + '" target="_blank" rel="noopener noreferrer">Offer link</a>' : '') + '</div>';
+  h += '<div>Lenskart Gold ' + (x.gold > 0 ? rs(x.gold) : '—') + ' · Regular ' + (x.norm > 0 ? rs(x.norm) : '—') + '</div>';
+  h += '<div class="mut">' + esc(CATS[x.cat] || 'Unknown lens type') + ' · Pairs ' + esc(x.pairs || 'unknown') +
+    ' · Frame ' + (x.frameIncluded === true ? 'included' : (x.frameIncluded === false ? 'excluded' : 'unknown')) +
+    (x.offerFrame === 'reg' ? ' (regular)' : (x.offerFrame === 'att' ? ' (attachment)' : '')) + ' · Warranty ' + esc(x.warranty || 'unknown') + '</div>';
+  h += '<div class="mut">Coatings / features: ' + esc(Array.isArray(x.coatings) ? (x.coatings.map(fname).join(', ') || 'None selected') : 'Unknown') +
+    (x.extraCoatings ? ' · ' + esc(x.extraCoatings) : '') + '</div>';
+  if (x.feat || x.src) h += '<div class="mut">' + esc([x.feat,x.src].filter(Boolean).join(' · ')) + '</div>';
+  h += auditComparison(x,x.ours ? findTier(x.ours) : null,false);
+  if (isOwner()) {
+    h += '<button class="btn sm" data-id="' + esc(x.id) + '" onclick="editOffer(this.dataset.id)">Edit / recheck</button>';
+    h += '<button class="btn sm del" data-id="' + esc(x.id) + '" onclick="delDoc(\'sales_competitor\',this.dataset.id,renderLk)">Delete</button>';
   }
-  db.collection('sales_competitor').add(rec).then(renderLk).catch(function(err){ alert(err.message); });
+  return h + '</div>';
 }
-function delDoc(col, id, after){ if (!confirm('Delete?')) return; db.collection(col).doc(id).delete().then(after); }
+function readOffer(){
+  var included = $('k_included').value;
+  var coatings = [];
+  document.querySelectorAll('.k_coating:checked').forEach(function(input){ coatings.push(input.value); });
+  var x = {name:$('k_name').value.trim(), date:$('k_date').value, link:$('k_link').value.trim(), cat:$('k_cat').value,
+    gold:+$('k_gold').value, norm:+$('k_norm').value, pairs:+$('k_pairs').value, frame:$('k_frame').value,
+    frameIncluded:included ? included === 'yes' : null, offerFrame:$('k_offer_frame').value,
+    warranty:$('k_warranty').value.trim(), coatings:$('k_coatings_checked').checked ? coatings : null,
+    extraCoatings:$('k_extra').value.trim(), feat:$('k_feat').value.trim(), src:$('k_src').value.trim(), ours:$('k_ours').value};
+  x.frame = auditFrame(x);
+  return x;
+}
+function previewAudit(){
+  $('k_match').checked = false;
+  var x = readOffer();
+  $('k_preview').innerHTML = x.ours ? auditComparison(x,findTier(x.ours),true) : '';
+}
+function editOffer(id){
+  if (!isOwner()) return;
+  var form = $('offerForm');
+  db.collection('sales_competitor').doc(id).get().then(function(doc){
+    if ($('offerForm') !== form || !doc.exists) return;
+    var x = doc.data();
+    x.id = doc.id;
+    offerForm(x);
+    form.scrollIntoView();
+  }).catch(function(err){ alert(err.message); });
+}
+function saveLk(button){
+  if (!isOwner() || button.disabled) return;
+  var x = readOffer(), ours = x.ours ? findTier(x.ours) : null;
+  if (!x.name || !x.date || x.date > today()) return alert('Enter the offer name and a valid check date.');
+  if (!Number.isFinite(x.gold) || !Number.isFinite(x.norm) || x.gold < 0 || x.norm < 0 || (!x.gold && !x.norm)) return alert('Enter at least one price above zero.');
+  if (x.link) {
+    x.link = auditLink(x.link);
+    if (!x.link) return alert('Enter a valid http or https offer link.');
+  }
+  x.auditTerms = $('k_match').checked && !auditIssues(x,ours).length ? auditTerms(x,ours) : null;
+  x.ts = Date.now();
+  x.by = USER.email;
+  var collection = db.collection('sales_competitor'), id = button.dataset.id;
+  button.disabled = true;
+  return (id ? collection.doc(id).update(x) : collection.add(x)).then(function(){
+    if (TAB === 'lk') renderLk();
+  }).catch(function(err){ alert(err.message); }).then(function(){ button.disabled = false; });
+}
+function delDoc(col, id, after){ if (!isOwner() || !confirm('Delete?')) return; db.collection(col).doc(id).delete().then(function(){ if (TAB === 'lk') after(); }).catch(function(err){ alert(err.message); }); }
 
 /* ===== Changes ===== */
 var DECISION_STATUSES = ['Planned','Keep','Fix','Stop','Inconclusive'];
