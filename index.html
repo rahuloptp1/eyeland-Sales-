@@ -833,7 +833,7 @@ function saveTarget(){
   var oldBills = +(old.bills != null ? old.bills : old.orders) || 0;
   var changed = +old.sales !== sales || oldBills !== bills;
   CFG.targets[MONTH] = {sales:sales, orders:bills, bills:bills};
-  saveCfg(changed ? 'Monthly targets updated for ' + monthLabel(MONTH) : '').then(function(){
+  saveCfg('').then(function(){
     if (!changed) { renderTarget(); return; }
     db.collection('sales_target_history').add({
       month:MONTH, sales:sales, bills:bills,
