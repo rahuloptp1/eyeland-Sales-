@@ -774,7 +774,7 @@ function renderTarget(){
       var staffName = STAFF_LABELS[si], st = selected.staff[staffName] || {n:0,b:0,rev:0};
       body += '<tr><td>' + staffName + '</td><td>' + st.n + '</td><td>' + st.b + '</td><td>' + rs(st.rev) + '</td></tr>';
     }
-    var un = selected.staff['Unassigned (older logs)'] || {n:0,b:0,rev:0};
+    var un = selected.staff['Unassigned'] || {n:0,b:0,rev:0};
     if (un.n) body += '<tr><td>Unassigned (older logs)</td><td>' + un.n + '</td><td>' + un.b + '</td><td>' + rs(un.rev) + '</td></tr>';
     body += '</table><div class="dashSection">Lost-sale reasons <span class="dashTableRange">' + esc(rg.from) + ' to ' + esc(rg.to) + '</span></div>';
     var reasons = Object.keys(selected.reasons).sort(function(a,b){ return selected.reasons[b] - selected.reasons[a]; });
