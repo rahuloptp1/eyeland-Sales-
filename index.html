@@ -92,6 +92,7 @@ var db = firebase.firestore();
 db.enablePersistence({synchronizeTabs: true}).catch(function(){});
 
 /* ===== State ===== */
+var STAFF_LABELS = ['Staff A', 'Staff B', 'Staff C'];
 var USER = null;
 var CFG = null;
 var TAB = 'target';
@@ -134,7 +135,7 @@ function seed(email){
   return {
     ownerEmail: email,
     updated: today(),
-    staff: ['Rahul','Staff A','Staff B'],
+    staff: STAFF_LABELS.slice(),
     targets: {},
     features: {
       scratch:{n:'Scratch resist', b:'Roz ki rough use mein bhi lens jaldi kharab nahi hota.'},
@@ -256,7 +257,7 @@ function saveCfg(note){
 }
 
 /* ===== Render shell ===== */
-var TABS = [['target','Target'],['log','Log'],['report','Review'],['coach','Coach'],['prices','Prices'],['lk','Lenskart']];
+var TABS = [['target','Target'],['log','Log'],['report','Review'],['coach','Coach'],['prices','Prices'],['lk','Launchpad']];
 function go(t){ TAB = t; EDIT = null; render(); window.scrollTo(0,0); }
 function render(){
   var h = '';
@@ -305,35 +306,36 @@ var QS = [
   {id:'need', q:'What do they need glasses for?', say:'Aapko door ke liye chahiye, paas ke liye, ya dono?', o:[['dist','Distance / one power'],['read','Reading only'],['both','Both far and near (40+)']]},
   {id:'line', q:'Okay with a visible line in the lens?', say:'Bifocal mein lens pe line dikhti hai. Progressive mein line nahi hoti, aur beech ki doori bhi saaf dikhti hai.', o:[['noline','No line → Progressive'],['line','Line is fine → Bifocal']], when:function(){ return ANS.need === 'both'; }},
   {id:'screen', q:'Screen time per day?', say:'Din mein phone ya laptop kitne ghante chalate ho?', o:[['s0','Under 2 hrs'],['s2','2–6 hrs'],['s6','6+ hrs']]},
+  {id:'task', q:'What do they do on the screen?', say:'Screen par kya kaam karte hain? Video calls, design, ya screen aur papers ke beech dekhna padta hai?', o:[['desk','Reading / desk work'],['detail','Design / fine detail'],['switch','Switch between screen, papers and distance'],['other','Other / occasional']], when:function(){ return ANS.screen === 's2' || ANS.screen === 's6'; }},
+  {id:'screenIssue', q:'What makes that work harder?', say:'Kaam karte waqt sabse zyada dikkat kab hoti hai?', o:[['glare','Reflections'],['detail','Small text / detail'],['switch','Changing viewing distance'],['none','No specific issue']], when:function(){ return ANS.screen === 's2' || ANS.screen === 's6'; }},
   {id:'drive', q:'Drive or ride at night?', say:'Raat ko gaadi ya bike chalate ho?', o:[['y','Yes'],['n','No']]},
   {id:'sun', q:'Out in the sun a lot?', say:'Dhoop mein zyada rehna hota hai? Bike pe travel?', o:[['y','Yes'],['n','No']]},
   {id:'thick', q:'Do their current glasses feel thick or heavy?', say:'Abhi wala chashma mota ya bhaari lagta hai?', o:[['y','Yes'],['n','No / first glasses']]},
   {id:'env', q:'Where will they mostly wear them?', say:'Kaam zyada office/ghar mein hai ya bahar field mein?', o:[['normal','Office / home'],['dust','Outdoor / dusty / field'],['kid','Child or sports']]},
-  {id:'spend', q:'What did they pay for their last pair?', say:'Pichhli baar chashma kitne ka banwaya tha? (Budget seedha mat poochho.)', o:[['b1','Under ₹2,000'],['b2','₹2,000–5,000'],['b3','₹5,000+'],['b0','First glasses / not sure']]}
+  {id:'spend', q:'What price range is comfortable for this purchase?', say:'Is baar aap kis price range mein options dekhna chahenge?', o:[['b1','Under ₹2,000'],['b2','₹2,000–5,000'],['b3','₹5,000+'],['b0','No range yet']]}
 ];
 function setAns(id, v){
   ANS[id] = v;
+  if (id === 'screen' && v === 's0') { delete ANS.task; delete ANS.screenIssue; }
   if (id === 'need' && v !== 'both') delete ANS.line;
   render();
 }
 function catFromAns(){ if (ANS.need === 'both') return ANS.line === 'line' ? 'bif' : 'prog'; return 'sv'; }
 
 function reqFromAns(cat){
-  var r = {feats:['scratch'], thin:0, reasons:[], addons:[]};
+  var r = {feats:['scratch'], thin:0, reasons:[]};
   function add(said, fs){
     r.reasons.push({said:said, feats:fs});
     for (var i = 0; i < fs.length; i++) {
       if (fs[i] !== 'thin' && r.feats.indexOf(fs[i]) < 0) r.feats.push(fs[i]);
     }
   }
-  if (ANS.screen === 's2') add('Screens 2–6 hours a day', ['blue','arc']);
-  if (ANS.screen === 's6') {
-    add('Screens 6+ hours a day', cat === 'prog' ? ['blue','arc'] : ['blue','arc','hd']);
-    if (cat === 'prog') r.addons.push('bprot');
-  }
+  var screenTask = {desk:'reading or desk work', detail:'detailed work', switch:'screen, papers and distance', other:'screen work'}[ANS.task];
+  if (ANS.screenIssue === 'glare') add('Screen reflections during ' + screenTask, ['arc']);
+  if (ANS.screenIssue === 'detail' && cat !== 'prog') add('Small details during ' + screenTask, ['hd']);
+  if (ANS.screenIssue === 'switch' && cat === 'prog') add('Switching viewing distances during ' + screenTask, ['smooth']);
   if (ANS.drive === 'y') {
     add('Drives or rides at night', cat === 'prog' ? ['arc'] : ['arc','drive']);
-    if (cat === 'prog') r.addons.push('night');
   }
   if (ANS.sun === 'y') add('Out in the sun a lot', (cat === 'sv' && ANS.screen === 's0' && ANS.thick !== 'y') ? ['spf','sunprotect'] : ['spf']);
   if (ANS.thick === 'y') { r.thin = cat === 'prog' ? 21 : 35; add('Current glasses feel thick or heavy', ['thin']); }
@@ -399,39 +401,44 @@ function resultHtml(){
   var frame = 'reg';
   var p = pick(cat, req, frame);
   var rec = p.rec, up = p.up;
-  var h = '<div class="card"><h2>Suggest: ' + esc(CATS[cat]) + '</h2>';
-  if (cat === 'bif') h += '<div class="mut">Bifocal uses the single vision attachment-frame prices.</div>';
-  if (ANS.spend === 'b3' && up) h += '<div class="note"><b>Show the Upgrade first.</b> They spent ₹5,000+ last time. Then show Recommended.</div>';
-  else if (ANS.spend === 'b1') h += '<div class="note">Low last spend. Show Recommended first. Mention the upgrade once, don\'t push.</div>';
-  h += tierBox(rec, cat, frame, 'RECOMMENDED', true);
-  if (p.missing.length) h += '<div class="note">No single lens covers everything. Missing: ' + esc(p.missing.join(', ')) + '. Explain this honestly.</div>';
-
-  h += '<div class="sec">Why this lens: say it like this</div>';
-  if (!req.reasons.length) h += '<div class="say">"Aapki zaroorat simple hai, ye lens roz ke use ke liye bilkul sahi hai."</div>';
+  var h = '<div class="card"><h2>△ Explain the benefits</h2><div class="mut">Confirm the main concern with the customer before showing the price.</div>';
+  if (!req.reasons.length) h += '<div class="say">“Aapne koi khaas dikkat nahi batayi. Aapke prescription aur daily use ke hisaab se simple lens se shuru karte hain.”</div>';
+  var explained = {};
   for (var i = 0; i < req.reasons.length; i++) {
     var r = req.reasons[i];
     for (var j = 0; j < r.feats.length; j++) {
       var fk = r.feats[j];
-      var nm = fk === 'thin' ? fname('thin') + ' (' + (rec ? rec.thin : req.thin) + '%)' : fname(fk);
-      h += '<div class="reason"><b>They said:</b> ' + esc(r.said) + ' → <b>' + esc(nm) + '</b><br>"' + esc(fben(fk)) + '"</div>';
+      if (explained[fk]) continue;
+      explained[fk] = true;
+      h += '<div class="reason"><b>' + esc(r.said) + '</b><br>' + esc(fname(fk)) + ' · “' + esc(coachBenefit(fk)) + '”</div>';
     }
   }
+  h += '</div><div class="card"><h2>△ Show the package</h2><div class="mut">' + esc(CATS[cat]) + ' · Start with the lowest-priced package that covers the stated needs.</div>';
+  if (cat === 'bif') h += '<div class="mut">Bifocal uses the attachment-frame prices.</div>';
+  var ceiling = {b1:1999, b2:5000}[ANS.spend];
+  if (rec && ceiling && priceOf(rec, cat, frame, 2) > ceiling) {
+    h += '<div class="note">This two-pair price is above the customer’s range. Ask which benefit matters most before showing a lower-priced option.</div>';
+    if (cat === 'prog' && priceOf(rec, cat, frame, 1) <= ceiling) h += '<div class="say">The same package for one pair fits their range.</div>';
+  }
+  h += tierBox(rec, cat, frame, p.missing.length ? 'CLOSEST MATCH' : 'RECOMMENDED', true);
+  if (!rec) h += '<div class="note">No package is available for this lens type.</div>';
+  if (p.missing.length) h += '<div class="note">The closest package does not include: ' + esc(p.missing.join(', ')) + '.</div>';
 
-  if (up) {
+  if (up && cat === 'prog' && ANS.task === 'switch' && up.cor > rec.cor && (!ceiling || priceOf(up, cat, frame, 2) <= ceiling)) {
     var rf = featsOf(rec, cat, frame), uf = featsOf(up, cat, frame), extra = [];
     for (var u = 0; u < uf.length; u++) if (rf.indexOf(uf[u]) < 0) extra.push(uf[u]);
     var diff = priceOf(up, cat, frame, 2) - priceOf(rec, cat, frame, 2);
     h += '<div class="sec">Upgrade: +' + rs(diff) + '</div>';
     h += tierBox(up, cat, frame, 'UPGRADE', false);
-    for (var e = 0; e < extra.length; e++) h += '<div class="say"><b>' + esc(fname(extra[e])) + ':</b> "' + esc(fben(extra[e])) + '"</div>';
+    for (var e = 0; e < extra.length; e++) h += '<div class="say"><b>' + esc(fname(extra[e])) + ':</b> "' + esc(coachBenefit(extra[e])) + '"</div>';
     if ((up.thin || 0) > (rec.thin || 0)) h += '<div class="say"><b>' + up.thin + '% thinner:</b> "' + esc(fben('thin')) + '"</div>';
     if (cat === 'prog' && up.cor > rec.cor) h += '<div class="say"><b>' + esc(CFG.corridors[up.cor]) + ' corridor:</b> "' + esc(fben('corridor')) + '"</div>';
   }
 
   h += '<div class="sec">Add more value</div>';
-  if (cat === 'prog') h += '<div class="say"><b>Second pair only +₹1,000:</b> "Ek spare ya office/car ke liye doosra pair, sirf ₹1,000 mein."</div>';
-  else h += '<div class="say"><b>Buy One Get One:</b> "Is price mein 2 pair milte hain. Ek roz ke liye, ek spare ya office ke liye."</div>';
-  if (ANS.sun === 'y') {
+  if (cat === 'prog' && rec) h += '<div class="say"><b>Optional second pair +' + rs(rec.p2 - rec.p1) + ':</b> “Agar spare chahiye, doosra pair le sakte hain.”</div>';
+  else if (cat !== 'prog' && rec) h += '<div class="say"><b>Buy One Get One:</b> "Is price mein 2 pair milte hain. Ek roz ke liye, ek spare ya office ke liye."</div>';
+  if (rec && ANS.sun === 'y') {
     if (cat === 'prog') {
       if (rec && rec.f.indexOf('photogrey') < 0) h += '<div class="say"><b>Photogrey add-on +' + rs(addonPrice('photo')) + ':</b> "' + esc(fben('photogrey')) + '"</div>';
       h += '<div class="say"><b>Attachment frame (magnetic sun clip):</b> same price for progressive. "Dhoop mein clip lagao, sunglasses ban jaate hain."</div>';
@@ -439,14 +446,19 @@ function resultHtml(){
       h += '<div class="say"><b>Attachment frame (magnetic sun clip): ' + rs(rec.priceAtt) + '</b> (+' + rs(rec.priceAtt - rec.price) + '). "Dhoop mein clip lagao, sunglasses ban jaate hain."</div>';
     }
   }
-  for (var a = 0; a < req.addons.length; a++) {
-    var ad = req.addons[a];
-    var txt = ad === 'bprot' ? 'Lens mein blue cut + upar se extra blue protect coating. Lambe screen time ke liye double protection.' : 'Raat ki driving ke liye extra clear vision.';
-    h += '<div class="say"><b>' + esc(addonName(ad)) + ' +' + rs(addonPrice(ad)) + ':</b> "' + esc(txt) + '"</div>';
-  }
   h += '<div class="sec">Close</div><div class="say">"Aapki zaroorat ke hisaab se yahi sahi rahega. Is section se koi bhi frame chun lijiye. Price final hai: koi fitting charge nahi, koi hidden cost nahi."</div>';
   h += '<button class="btn pri" onclick="logFromGuide()">Log this customer</button></div>';
   return h;
+}
+function coachBenefit(key){
+  var wording = {
+    blue:'Yeh lens kuch blue light filter karta hai.',
+    arc:'Lens par light ke reflections kam dikhte hain, isliye screen ya kaagaz par dhyaan dena aasaan ho sakta hai.',
+    drive:'Lens par reflections kam karne ke liye yeh option dekh sakte hain.',
+    shatter:'Yeh impact-resistant lens hai. Sports ke liye suitable protective frame bhi check karenge.',
+    crack:'Roz ke use ke liye crack-resistant lens.'
+  };
+  return wording[key] || fben(key);
 }
 function addonName(id){ for (var i = 0; i < CFG.addons.length; i++) if (CFG.addons[i].id === id) return CFG.addons[i].n; return id; }
 function addonPrice(id){ for (var i = 0; i < CFG.addons.length; i++) if (CFG.addons[i].id === id) return CFG.addons[i].p; return 0; }
@@ -483,7 +495,7 @@ function renderCoach(){
 function subBtn(id, l){ return '<button class="btn sm' + (SUB === id ? ' on' : '') + '" onclick="SUB=\'' + id + '\';render()">' + l + '</button>'; }
 
 function guideHtml(){
-  var h = '<div class="card"><h2>Ask these questions</h2><div class="mut">Ask in this order. Tap the customer\'s answer. Don\'t show the price card until the end.</div>';
+  var h = '<div class="card"><h2>△ Ask & listen</h2><div class="mut">Start with what they do, what gets in the way and what they want to make easier. Repeat their main concern back to them.</div>';
   var all = true, n = 0;
   for (var i = 0; i < QS.length; i++) {
     var q = QS[i];
@@ -497,7 +509,7 @@ function guideHtml(){
     if (!ANS[q.id]) all = false;
   }
   h += '<button class="btn sm" onclick="ANS={};render();window.scrollTo(0,0)">New customer</button></div>';
-  h += all ? resultHtml() : '<div class="card mut">Answer every question to see what to suggest and what to say.</div>';
+  h += all ? resultHtml() : '<div class="card mut">Finish the questions to see the benefits and matching packages.</div>';
   return h;
 }
 
@@ -570,7 +582,7 @@ function renderLog(){
   var f = LOGF, i;
   var h = '<div class="card"><h2>Log a customer</h2><div class="mut">Every customer, bought or not. Takes 20 seconds.</div>';
   h += '<div class="sec">Served by</div>';
-  for (i = 0; i < CFG.staff.length; i++) h += choice('staff', CFG.staff[i], CFG.staff[i]);
+  for (i = 0; i < STAFF_LABELS.length; i++) h += choice('staff', STAFF_LABELS[i], STAFF_LABELS[i]);
   h += '<div class="sec">Customer wanted</div>';
   for (var c in CATS) h += choice('cat', c, CATS[c]);
   if (f.cat === 'sv' || f.cat === 'prog') {
@@ -613,7 +625,7 @@ function renderLog(){
 }
 function saveLog(){
   var f = LOGF;
-  if (!f.staff) return alert('Choose who served the customer.');
+  if (STAFF_LABELS.indexOf(f.staff) < 0) return alert('Choose who served the customer.');
   if (!f.cat) return alert('Choose what the customer wanted.');
   if (f.bought === null) return alert('Choose Bought or Did not buy.');
   if (f.bought && f.cat !== 'enq' && !f.tier) return alert('Choose the lens they bought.');
@@ -653,7 +665,7 @@ function loadToday(){
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
       if (r.bought) { bought++; rev += r.amount; }
-      tb += '<tr><td>' + esc(r.staff) + '</td><td>' + esc(CATS[r.cat] || r.cat) + (r.tierName ? '<br><span class="mut">' + esc(r.tierName) + '</span>' : '') + '</td><td>' +
+      tb += '<tr><td>' + esc(staffLabel(r.staff)) + '</td><td>' + esc(CATS[r.cat] || r.cat) + (r.tierName ? '<br><span class="mut">' + esc(r.tierName) + '</span>' : '') + '</td><td>' +
         (r.bought ? '<span class="ok">' + rs(r.amount) + '</span>' : '<span class="bad">' + esc(r.reason) + '</span>') + '</td><td>' +
         (isOwner() ? '<button class="btn sm del" onclick="delLog(\'' + r._id + '\')">✕</button>' : '') + '</td></tr>';
     }
@@ -771,10 +783,10 @@ function diagnosisHtml(s, ps){
   if (top.length) out.push('Biggest reason for lost sales: <b>' + esc(top[0]) + '</b> (' + pct(s.reasons[top[0]], s.n - s.b) + '% of lost customers).');
   if (s.lkN >= 3 && pct(s.lkB, s.lkN) < s.conv) out.push('Customers who compared with Lenskart convert worse (' + pct(s.lkB, s.lkN) + '% vs ' + s.conv + '%). Fix the Lenskart comparison: card, signage, pitch.');
   if (ps && ps.n) {
-    if (s.n < ps.n) out.push('Fewer customers than the previous 15 days (' + s.n + ' vs ' + ps.n + '). This is a footfall problem: marketing, not the sales pitch.');
+    if (s.n < ps.n) out.push('Fewer logged customers (' + s.n + ' vs ' + ps.n + '). Check whether walk-ins dropped or some visits went unlogged.');
     if (s.conv < ps.conv) out.push('Conversion dropped (' + ps.conv + '% → ' + s.conv + '%). Check the latest change and the staff with the lowest conversion.');
-    if (s.avg < ps.avg) out.push('Average bill dropped (' + rs(ps.avg) + ' → ' + rs(s.avg) + '). Push need-based upgrades and the second pair.');
-    if (s.rev > ps.rev) out.push('Sales are up ' + rs(s.rev - ps.rev) + ' on the previous 15 days. Keep what changed.');
+    if (s.avg < ps.avg) out.push('Average bill dropped (' + rs(ps.avg) + ' → ' + rs(s.avg) + '). Review which customer needs and packages were recorded.');
+    if (s.rev > ps.rev) out.push('Sales are up ' + rs(s.rev - ps.rev) + ' over the previous 15 days. Compare the logged changes with the results before deciding what to keep.');
   }
   var th = s.test['Tested here'], tn = s.test['Not tested here'];
   if (th && tn && th.n >= 3 && tn.n >= 3 && pct(th.b, th.n) > pct(tn.b, tn.n) + 10) out.push('Eye test here converts ' + pct(th.b, th.n) + '% vs ' + pct(tn.b, tn.n) + '% without. Offer a free eye test to every walk-in.');
@@ -801,13 +813,17 @@ function fetchRange(from, to){
     var rows = []; snap.forEach(function(d){ rows.push(d.data()); }); return rows;
   });
 }
+function staffLabel(value){
+  return STAFF_LABELS.indexOf(value) >= 0 ? value : 'Unassigned (older logs)';
+}
 function stats(rows){
   var s = {n:0, b:0, rev:0, staff:{}, reasons:{}, tiers:{}, cats:{}, lkN:0, lkB:0, addon:0, att:0, src:{}, cust:{}, test:{}, fuOpen:0, fuWon:0, fuLost:0};
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
+    var staff = staffLabel(r.staff);
     s.n++;
-    if (!s.staff[r.staff]) s.staff[r.staff] = {n:0, b:0, rev:0};
-    s.staff[r.staff].n++;
+    if (!s.staff[staff]) s.staff[staff] = {n:0, b:0, rev:0};
+    s.staff[staff].n++;
     if (!s.cats[r.cat]) s.cats[r.cat] = {n:0, b:0};
     s.cats[r.cat].n++;
     if (r.lk) { s.lkN++; if (r.bought) s.lkB++; }
@@ -816,7 +832,7 @@ function stats(rows){
     if (r.fu === 'open') s.fuOpen++; else if (r.fu === 'won') s.fuWon++; else if (r.fu === 'lost') s.fuLost++;
     if (r.bought) {
       s.b++; s.rev += r.amount || 0;
-      s.staff[r.staff].b++; s.staff[r.staff].rev += r.amount || 0;
+      s.staff[staff].b++; s.staff[staff].rev += r.amount || 0;
       s.cats[r.cat].b++;
       if (r.tierName) { var key = (CATS[r.cat] || r.cat) + ': ' + r.tierName; s.tiers[key] = (s.tiers[key] || 0) + 1; }
       if (r.addons && r.addons.length) s.addon++;
@@ -853,10 +869,21 @@ function renderReport(){
   var cmp = PERIOD === 'last15' ? periodRange('prev15') : null;
   var p1 = fetchRange(rg.from, rg.to);
   var p2 = cmp ? fetchRange(cmp.from, cmp.to) : Promise.resolve(null);
-  Promise.all([p1, p2]).then(function(res){
+  var report = $('rep');
+  var month = monthKey(rg.to), target = CFG.targets && CFG.targets[month];
+  var p3 = cmp && target ? fetchRange(month + '-01', rg.to).then(stats) : Promise.resolve(null);
+  Promise.all([p1, p2, p3]).then(function(res){
+    if ($('rep') !== report) return;
     var s = stats(res[0]), ps = res[1] ? stats(res[1]) : null;
     LAST_ROWS = res[0]; LAST_STATS = s; LAST_RANGE = rg;
     var h2 = '<h2>' + esc(rg.label) + '</h2><div class="mut">' + rg.from + ' to ' + rg.to + (ps ? ' · arrows compare with the previous 15 days' : '') + '</div>';
+    if (cmp) {
+      h2 += '<div class="say"><b>Next team review: ' + addDays(rg.to, 15) + ' if you review today</b><br>Pick one change to test, write down the expected result below, then record Keep, Fix or Stop at the next review.</div>';
+      if (res[2]) {
+        var monthly = res[2], expected = Math.round(target.sales * paceShare(+rg.to.slice(8), daysInMonth(month)));
+        h2 += '<div class="note"><b>' + monthLabel(month) + ' target</b><br>Sales ' + rs(monthly.rev) + ' of ' + rs(target.sales) + ' · ' + rs(Math.max(0, target.sales - monthly.rev)) + ' still needed.<br>' + (monthly.rev >= expected ? 'On pace' : 'Behind pace by ' + rs(expected - monthly.rev)) + ' · Orders ' + monthly.b + ' of ' + (target.orders || '—') + '</div>';
+      } else h2 += '<div class="mut">Set this month’s sales and order goals in Target to see progress here.</div>';
+    }
     h2 += '<div class="kpi" style="margin-top:10px">';
     h2 += '<div>Customers<b>' + s.n + delta(s.n, ps && ps.n) + '</b></div>';
     h2 += '<div>Bought<b>' + s.b + delta(s.b, ps && ps.b) + '</b></div>';
@@ -883,7 +910,7 @@ function renderReport(){
     $('rep').className = 'card';
     $('rep').innerHTML = diagnosisHtml(s, ps) + h2;
     loadChanges();
-  }).catch(function(err){ $('rep').innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+  }).catch(function(err){ if ($('rep') === report) report.innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
 }
 function copyReview(){
   var s = LAST_STATS, rg = LAST_RANGE;
@@ -893,7 +920,7 @@ function copyReview(){
   t += 'date,staff,wanted,frame,lens,pairs,addons,bought,amount,reason,lenskart,needs,customer,source,eyetest,followup\n';
   for (var i = 0; i < LAST_ROWS.length; i++) {
     var r = LAST_ROWS[i];
-    t += [r.date, r.staff, r.cat, r.frame, '"' + (r.tierName || '') + '"', r.pairs, (r.addons || []).join('+'), r.bought ? 'Y' : 'N', r.amount || 0, '"' + (r.reason || '') + '"', r.lk ? 'Y' : 'N', (r.need || []).join('+'), r.cust || '', r.src || '', r.test ? 'Y' : 'N', r.fu || ''].join(',') + '\n';
+    t += [r.date, staffLabel(r.staff), r.cat, r.frame, '"' + (r.tierName || '') + '"', r.pairs, (r.addons || []).join('+'), r.bought ? 'Y' : 'N', r.amount || 0, '"' + (r.reason || '') + '"', r.lk ? 'Y' : 'N', (r.need || []).join('+'), r.cust || '', r.src || '', r.test ? 'Y' : 'N', r.fu || ''].join(',') + '\n';
   }
   t += '\nCURRENT PRICE LIST (updated ' + CFG.updated + ')\n';
   for (var j = 0; j < CFG.sv.length; j++) { var a = CFG.sv[j]; t += 'SV ' + a.id + ' ' + a.name + ': ' + a.price + (a.priceAtt != null ? ' / att ' + a.priceAtt : '') + '\n'; }
@@ -963,7 +990,6 @@ function saveTier(id, cat){
 }
 function settingsHtml(){
   var h = '<div class="card"><h3>Settings</h3>';
-  h += '<label>Staff (comma separated)</label><input id="s_staff" value="' + esc(CFG.staff.join(', ')) + '">';
   h += '<label>Add-on prices</label>';
   for (var i = 0; i < CFG.addons.length; i++) h += '<div class="row"><div style="flex:2;padding-top:12px">' + esc(CFG.addons[i].n) + '</div><div><input id="s_ad_' + CFG.addons[i].id + '" type="number" value="' + CFG.addons[i].p + '"></div></div>';
   h += '<label>Offer rules (one per line)</label><textarea id="s_rules">' + esc(CFG.rules.join('\n')) + '</textarea>';
@@ -973,54 +999,91 @@ function settingsHtml(){
   return h;
 }
 function saveSettings(){
-  CFG.staff = $('s_staff').value.split(',').map(function(s){ return s.trim(); }).filter(function(s){ return s; });
   for (var i = 0; i < CFG.addons.length; i++) CFG.addons[i].p = +$('s_ad_' + CFG.addons[i].id).value || 0;
   CFG.rules = $('s_rules').value.split('\n').map(function(s){ return s.trim(); }).filter(function(s){ return s; });
   CFG.objections = $('s_obj').value.split('\n').map(function(line){
     var p = line.split('|'); return {q: (p[0] || '').trim(), a: p.slice(1).join('|').trim()};
   }).filter(function(o){ return o.q && o.a; });
-  saveCfg('Settings updated (staff, add-ons, rules, objections)').then(function(){ alert('Saved.'); renderPrices(); });
+  saveCfg('Settings updated (add-ons, rules, objections)').then(function(){ alert('Saved.'); renderPrices(); });
 }
 
 /* ===== Lenskart ===== */
 function renderLk(){
   var own = isOwner();
-  var h = '<div class="card"><h2>Lenskart Gold prices</h2><div class="mut">Compare like for like: lens type, coatings, warranty, what is included. Prices older than 15 days are marked "check again".</div></div>';
+  var h = '<div class="card"><h2>Launchpad · Lenskart price audit</h2><div class="mut">Enter offers from a report, quote or screenshot. Confirm the same number of pairs, frame inclusion, lens features and warranty before quoting a saving.</div></div>';
   if (own) {
     h += '<div class="card"><h3>Add a price check</h3>';
-    h += '<div class="row"><div><label>Date checked</label><input id="k_date" type="date" value="' + today() + '"></div><div><label>Type</label><select id="k_cat"><option value="sv">Single vision</option><option value="bif">Bifocal</option><option value="prog">Progressive</option></select></div></div>';
+    h += '<div class="row"><div><label>Date checked</label><input id="k_date" type="date" value="' + today() + '"></div><div><label>Type</label><select id="k_cat" onchange="previewAudit()"><option value="sv">Single vision</option><option value="bif">Bifocal</option><option value="prog">Progressive</option></select></div></div>';
     h += '<label>Lenskart package / lens name</label><input id="k_name">';
     h += '<div class="row"><div><label>Gold member price ₹</label><input id="k_gold" type="number"></div><div><label>Normal price ₹</label><input id="k_norm" type="number"></div></div>';
     h += '<label>What is included (frame, coatings, pairs, warranty)</label><input id="k_feat">';
-    h += '<label>Our closest lens</label><select id="k_ours"><option value="">—</option>';
+    h += '<div class="row"><div><label>Pairs in offer</label><select id="k_pairs" onchange="previewAudit()"><option value="2">2 pairs</option><option value="1">1 pair</option></select></div><div><label>Our frame</label><select id="k_frame" onchange="previewAudit()"><option value="reg">Regular</option><option value="att">Attachment</option></select></div></div>';
+    h += '<label>Our package</label><select id="k_ours" onchange="previewAudit()"><option value="">Choose a package</option>';
     var all = CFG.sv.concat(CFG.prog);
-    for (var i = 0; i < all.length; i++) h += '<option value="' + all[i].id + '">' + esc(all[i].name) + ' (' + (all[i].p1 ? rs(all[i].p1) : rs(all[i].price)) + ')</option>';
-    h += '</select><label>Source (website, store visit, screenshot)</label><input id="k_src">';
+    for (var i = 0; i < all.length; i++) h += '<option value="' + esc(all[i].id) + '">' + esc(all[i].name) + '</option>';
+    h += '</select><label>Source (report, website, store visit, screenshot)</label><input id="k_src">';
+    h += '<div id="k_preview"></div><label><input type="checkbox" id="k_match" style="width:auto"> I checked that the frame, pairs, lens features and warranty match the selected Eyeland package.</label>';
     h += '<button class="btn pri" onclick="saveLk()">Save</button></div>';
   }
   h += '<div class="card" id="lkList"><div class="mut">Loading…</div></div>';
   $('view').innerHTML = h;
+  var list = $('lkList');
   db.collection('sales_competitor').orderBy('date', 'desc').limit(60).get().then(function(snap){
     var out = '';
     snap.forEach(function(d){
       var x = d.data(), age = daysAgo(x.date), ours = x.ours ? findTier(x.ours) : null;
-      out += '<div class="tier"><b>' + esc(CATS[x.cat] || '') + ': ' + esc(x.name) + '</b> ' + (age > 15 ? '<span class="tag no">check again (' + age + ' days)</span>' : '<span class="tag">' + age + ' days ago</span>');
-      out += '<div>Gold: <span class="price">' + rs(x.gold) + '</span>' + (x.norm ? ' · Normal ' + rs(x.norm) : '') + '</div>';
+      out += '<div class="tier"><b>' + esc(CATS[x.cat] || '') + ': ' + esc(x.name) + '</b> ' + (age >= 15 ? '<span class="tag no">check again (' + age + ' days)</span>' : '<span class="tag">' + age + ' days ago</span>');
+      out += '<div>' + (x.gold ? 'Gold: <span class="price">' + rs(x.gold) + '</span>' : '') + (x.gold && x.norm ? ' · ' : '') + (x.norm ? 'Normal: ' + rs(x.norm) : '') + '</div>';
       if (x.feat) out += '<div class="mut">Includes: ' + esc(x.feat) + '</div>';
-      if (ours) {
-        var op = ours.p1 ? ours.p2 : ours.price;
-        out += '<div class="say">Ours: <b>' + esc(ours.name) + '</b> ' + rs(op) + (ours.p1 ? ' for 2 pairs' : ' for 2 pairs') + ' incl. any generic frame. ' + esc(ours.f.map(fname).join(', ')) + '</div>';
-      }
+      out += auditComparison(x, ours, age);
       out += '<div class="mut">' + esc(x.date) + (x.src ? ' · ' + esc(x.src) : '') + '</div>';
       if (own) out += '<button class="btn sm del" onclick="delDoc(\'sales_competitor\',\'' + d.id + '\',renderLk)">Delete</button>';
       out += '</div>';
     });
-    $('lkList').innerHTML = out || '<div class="mut">No prices saved yet.</div>';
-  }).catch(function(err){ $('lkList').innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+    list.innerHTML = out || '<div class="mut">No prices saved yet.</div>';
+  }).catch(function(err){ list.innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+}
+function previewAudit(){
+  $('k_match').checked = false;
+  var offer = {cat:$('k_cat').value, frame:$('k_frame').value, pairs:+$('k_pairs').value};
+  var ours = findTier($('k_ours').value);
+  $('k_preview').innerHTML = ours ? auditComparison(offer, ours, 0) : '';
+}
+function auditPrice(x, ours){
+  if (!ours || ['sv','bif','prog'].indexOf(x.cat) < 0 || tiersFor(x.cat).indexOf(ours) < 0) return null;
+  if (x.pairs !== 2 && (x.cat !== 'prog' || x.pairs !== 1)) return null;
+  return priceOf(ours, x.cat, x.frame, x.pairs);
+}
+function auditTerms(x, ours){
+  return JSON.stringify([x.cat, x.cat === 'bif' ? 'att' : x.frame, x.pairs, featsOf(ours, x.cat, x.frame).slice().sort(), ours.war || '', ours.thin || 0, ours.cor || 0]);
+}
+function auditComparison(x, ours, age){
+  var price = auditPrice(x, ours);
+  if (price == null) return '<div class="mut">No comparable Eyeland price for these pairs and lens type.</div>';
+  var frame = x.cat === 'bif' || x.frame === 'att' ? 'attachment frame' : 'regular frame';
+  var h = '<div class="say">Eyeland: <b>' + esc(ours.name) + '</b> ' + rs(price) + ' for ' + x.pairs + (x.pairs === 1 ? ' pair' : ' pairs') + ' · ' + frame + '. ' + esc(featsOf(ours, x.cat, x.frame).map(fname).join(', ')) + (ours.war ? ' · Warranty ' + esc(ours.war) : '') + '</div>';
+  if (age < 0 || age >= 15 || !x.auditTerms || x.auditTerms !== auditTerms(x, ours)) {
+    return h + '<div class="mut">Confirm the offer and matching terms before quoting a price difference.</div>';
+  }
+  if (x.gold > 0) h += '<div>Compared with Gold: ' + auditDifference(x.gold - price) + '</div>';
+  if (x.norm > 0) h += '<div>Compared with normal price: ' + auditDifference(x.norm - price) + '</div>';
+  return h + '<div class="mut">Use the price the customer qualifies for. To test a price change, use Prices and check conversion and sales in Review after 15 days.</div>';
+}
+function auditDifference(diff){
+  if (!diff) return 'Same price';
+  return 'Eyeland is ' + rs(Math.abs(diff)) + (diff > 0 ? ' lower' : ' higher');
 }
 function saveLk(){
   var rec = {date: $('k_date').value || today(), cat: $('k_cat').value, name: $('k_name').value.trim(), gold: +$('k_gold').value || 0, norm: +$('k_norm').value || 0, feat: $('k_feat').value.trim(), ours: $('k_ours').value, src: $('k_src').value.trim(), ts: Date.now(), by: USER.email};
-  if (!rec.name || !rec.gold) return alert('Enter the package name and Gold price.');
+  rec.pairs = +$('k_pairs').value;
+  rec.frame = rec.cat === 'bif' ? 'att' : $('k_frame').value;
+  if (!rec.name || rec.gold < 0 || rec.norm < 0 || (!rec.gold && !rec.norm)) return alert('Enter the package name and at least one price above zero.');
+  if (rec.date > today()) return alert('Use the date the offer was checked.');
+  if ($('k_match').checked) {
+    var ours = findTier(rec.ours);
+    if (!rec.feat || !rec.src || auditPrice(rec, ours) == null) return alert('Enter the offer details and source, and choose a package with a price for this lens type and pair count.');
+    rec.auditTerms = auditTerms(rec, ours);
+  }
   db.collection('sales_competitor').add(rec).then(renderLk).catch(function(err){ alert(err.message); });
 }
 function delDoc(col, id, after){ if (!confirm('Delete?')) return; db.collection(col).doc(id).delete().then(after); }
@@ -1045,6 +1108,10 @@ function loadChanges(){
     snap.forEach(function(d){
       var x = d.data(), v = x.verdict || '';
       out += '<div class="tier"><span class="tag">' + esc(x.type) + '</span> <span class="mut">' + esc(x.date) + ' · ' + daysAgo(x.date) + ' days ago</span>';
+      if (!v && x.date) {
+        var due = addDays(x.date, 15);
+        out += ' <span class="tag' + (due <= today() ? ' no' : '') + '">' + (due <= today() ? 'Review due' : 'Review from ' + due) + '</span>';
+      }
       if (v) out += ' <span class="tag ' + (v === 'Stop' ? 'no' : '') + '">' + esc(v) + '</span>';
       out += '<div><b>' + esc(x.what) + '</b></div>';
       if (x.why) out += '<div class="mut">Why: ' + esc(x.why) + '</div>';
