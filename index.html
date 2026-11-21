@@ -14,6 +14,7 @@ header .brand span{color:var(--red)}
 main{padding:12px 12px 96px;max-width:780px;margin:0 auto}
 nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;z-index:5}
 nav button{flex:1;border:0;background:none;padding:12px 2px;font-size:12px;color:var(--mut);cursor:pointer}
+@media(max-width:450px){nav{flex-wrap:wrap}nav button{flex:1 0 25%;padding:10px 2px}}
 nav button.on{color:var(--red);font-weight:700}
 .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
 h2{font-size:18px;margin:2px 0 10px}
@@ -215,7 +216,11 @@ function seed(email){
 
 var LOST = ['Price','Lenskart / online','Did not like frames','Will come back','Only checking prices','Family to decide','Other'];
 var CATS = {sv:'Single vision', bif:'Bifocal', prog:'Progressive', enq:'Just enquiry'};
-var SOURCES = ['Walked past','Old customer','Referral','Instagram reel/post','Meta ad','Google','Other'];
+var SOURCES = ['Walk-in','Instagram organic','Meta ad','Google','Referral','Repeat customer','Other','Unknown'];
+function sourceLabel(value){
+  var older = {'Walked past':'Walk-in','Old customer':'Repeat customer','Instagram reel/post':'Instagram organic'};
+  return SOURCES.indexOf(value) >= 0 ? value : (Object.prototype.hasOwnProperty.call(older,value) ? older[value] : 'Unknown');
+}
 var FU_REASONS = ['Will come back','Family to decide','Price','Lenskart / online','Only checking prices'];
 
 /* ===== Auth ===== */
@@ -263,7 +268,7 @@ function saveCfg(note){
 }
 
 /* ===== Render shell ===== */
-var TABS = [['target','Target'],['log','Log'],['report','Review'],['coach','Coach'],['prices','Prices'],['lk','Launchpad']];
+var TABS = [['target','Target'],['log','Log'],['report','Review'],['coach','Coach'],['prices','Prices'],['lk','Launchpad'],['marketing','Marketing']];
 function go(t){ TAB = t; EDIT = null; render(); window.scrollTo(0,0); }
 function render(){
   var h = '';
@@ -276,6 +281,7 @@ function render(){
   else if (TAB === 'log') renderLog();
   else if (TAB === 'report') renderReport();
   else if (TAB === 'prices') renderPrices();
+  else if (TAB === 'marketing') renderMarketing();
   else renderLk();
 }
 
@@ -568,7 +574,7 @@ function rulesHtml(){
 }
 
 /* ===== Log ===== */
-function newLogForm(){ return {date: today(), staff: '', cat: '', frame: 'reg', tier: '', pairs: 2, addons: {}, bought: null, reason: '', lk: null, need: [], cust: '', src: '', test: null, name: '', phone: ''}; }
+function newLogForm(){ return {date: today(), staff: '', cat: '', frame: 'reg', tier: '', pairs: 2, addons: {}, bought: null, reason: '', lk: null, need: [], cust: '', src: 'Unknown', campaignTag: '', test: null, name: '', phone: ''}; }
 function lf(k, v){ LOGF[k] = v; if (k === 'cat') { LOGF.tier = ''; LOGF.frame = 'reg'; } if (k === 'frame') LOGF.tier = ''; renderLog(); }
 function lfAddon(id){ LOGF.addons[id] = !LOGF.addons[id]; renderLog(); }
 function logAmount(){
@@ -611,8 +617,9 @@ function renderLog(){
     }
   }
   h += '<div class="sec">Customer</div>' + choice('cust', 'new', 'New') + choice('cust', 'rep', 'Repeat (bought before)');
-  h += '<div class="sec">How did they come?</div>';
+  h += '<div class="sec">How did you hear about us?</div>';
   for (i = 0; i < SOURCES.length; i++) h += choice('src', SOURCES[i], SOURCES[i]);
+  h += '<label for="logCampaign">Campaign/Reel tag (optional)</label><input id="logCampaign" value="' + esc(f.campaignTag) + '" oninput="LOGF.campaignTag=this.value">';
   h += '<div class="sec">Eye test done here?</div>' + choice('test', true, 'Yes') + choice('test', false, 'No (outside prescription / no test)');
   h += '<div class="sec">Result</div>' + choice('bought', true, 'Bought') + choice('bought', false, 'Did not buy');
   if (f.bought === false) {
@@ -638,7 +645,6 @@ function saveLog(){
   if (f.bought === false && !f.reason) return alert('Choose why they did not buy.');
   if (f.lk === null) return alert('Did they compare with Lenskart? Tap Yes or No.');
   if (!f.cust) return alert('New or repeat customer?');
-  if (!f.src) return alert('How did they come?');
   if (f.test === null) return alert('Eye test done here? Tap Yes or No.');
   var phone = (f.phone || '').replace(/\D/g, '').slice(-10);
   var fu = f.bought === false && FU_REASONS.indexOf(f.reason) > -1;
@@ -650,7 +656,7 @@ function saveLog(){
     date: today(), ts: Date.now(), staff: f.staff, cat: f.cat, frame: f.cat === 'sv' || f.cat === 'prog' ? f.frame : (f.cat === 'bif' ? 'att' : ''),
     tier: f.tier || '', tierName: t ? t.name : '', pairs: f.cat === 'prog' ? f.pairs : (f.cat === 'enq' ? 0 : 2),
     addons: ads, bought: !!f.bought, amount: logAmount(), reason: f.bought ? '' : f.reason, lk: !!f.lk, need: f.need || [], by: USER.email,
-    cust: f.cust, src: f.src, test: !!f.test, name: (f.name || '').trim(), phone: phone,
+    cust: f.cust, src: sourceLabel(f.src), campaignTag: (f.campaignTag || '').trim(), test: !!f.test, name: (f.name || '').trim(), phone: phone,
     fu: fu && phone.length === 10 ? 'open' : '', fuDue: fu ? addDays(today(), 2) : ''
   };
   db.collection('sales_log').add(rec).then(function(){
@@ -667,11 +673,11 @@ function loadToday(){
     var bought = 0, rev = 0;
     var h = '<h3>Today</h3>';
     if (!rows.length) { $('todayList').innerHTML = h + '<div class="mut">No customers logged yet.</div>'; return; }
-    var tb = '<table><tr><th>Staff</th><th>Wanted</th><th>Result</th><th></th></tr>';
+    var tb = '<table><tr><th>Staff</th><th>Wanted / source</th><th>Result</th><th></th></tr>';
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
       if (r.bought) { bought++; rev += r.amount; }
-      tb += '<tr><td>' + esc(staffLabel(r.staff)) + '</td><td>' + esc(CATS[r.cat] || r.cat) + (r.tierName ? '<br><span class="mut">' + esc(r.tierName) + '</span>' : '') + '</td><td>' +
+      tb += '<tr><td>' + esc(staffLabel(r.staff)) + '</td><td>' + esc(CATS[r.cat] || r.cat) + (r.tierName ? '<br><span class="mut">' + esc(r.tierName) + '</span>' : '') + '<br><span class="mut">' + esc(sourceLabel(r.src)) + (r.campaignTag ? ' · ' + esc(r.campaignTag) : '') + '</span></td><td>' +
         (r.bought ? '<span class="ok">' + rs(r.amount) + '</span>' : '<span class="bad">' + esc(r.reason) + '</span>') + '</td><td>' +
         (isOwner() ? '<button class="btn sm del" onclick="delLog(\'' + r._id + '\')">✕</button>' : '') + '</td></tr>';
     }
@@ -939,7 +945,7 @@ function stats(rows){
     if (!s.cats[category]) s.cats[category] = {n:0,b:0,rev:0};
     s.cats[category].n++;
     if (r.lk) { s.lkN++; if (r.bought === true) s.lkB++; }
-    var groups = [['src', r.src || 'Not recorded'], ['cust', r.cust === 'rep' ? 'Repeat' : (r.cust === 'new' ? 'New' : 'Not recorded')], ['test', r.test === true ? 'Tested here' : (r.test === false ? 'Not tested here' : 'Not recorded')]];
+    var groups = [['src', sourceLabel(r.src)], ['cust', r.cust === 'rep' ? 'Repeat' : (r.cust === 'new' ? 'New' : 'Not recorded')], ['test', r.test === true ? 'Tested here' : (r.test === false ? 'Not tested here' : 'Not recorded')]];
     for (var g = 0; g < groups.length; g++) { var gk = groups[g][0], gv = groups[g][1]; if (!s[gk][gv]) s[gk][gv] = {n:0,b:0,rev:0}; s[gk][gv].n++; if (r.bought === true) { s[gk][gv].b++; s[gk][gv].rev += amount; } }
     if (r.fu === 'open') s.fuOpen++; else if (r.fu === 'won') s.fuWon++; else if (r.fu === 'lost') s.fuLost++;
     if (r.bought === true) {
@@ -1120,6 +1126,120 @@ function saveSettings(){
     var p = line.split('|'); return {q: (p[0] || '').trim(), a: p.slice(1).join('|').trim()};
   }).filter(function(o){ return o.q && o.a; });
   saveCfg('Settings updated (add-ons, rules, objections)').then(function(){ alert('Saved.'); renderPrices(); });
+}
+
+/* ===== Marketing ===== */
+var CAMPAIGN_PLATFORMS = ['Meta','Instagram organic','Other'];
+var CAMPAIGN_METRICS = [['spend','Spend ₹', '0.01'],['reach','Reach','1'],['clicks','Clicks','1'],['leads','Messages / leads','1']];
+function fetchCampaigns(){
+  return db.collection('sales_campaigns').get().then(function(snap){
+    var rows = [];
+    snap.forEach(function(doc){ var row = doc.data(); row.id = doc.id; rows.push(row); });
+    return rows.sort(function(a,b){ return b.start.localeCompare(a.start); });
+  });
+}
+function campaignResults(campaign, rows){
+  var source = campaign.platform === 'Meta' ? 'Meta ad' : campaign.platform;
+  var name = campaign.name.trim().toLowerCase();
+  var withinDates = rows.filter(function(row){
+    return row.date >= campaign.start && row.date <= campaign.end && sourceLabel(row.src) === source;
+  });
+  return {
+    source:stats(withinDates),
+    tagged:stats(withinDates.filter(function(row){ return String(row.campaignTag || '').trim().toLowerCase() === name; }))
+  };
+}
+function renderMarketing(){
+  $('view').innerHTML = '<div class="card"><h2>Marketing</h2><div id="marketingSources" class="mut">Loading sources…</div></div>' +
+    (isOwner() ? '<div id="campaignForm" class="card"></div>' : '') + '<div id="campaignList" class="card mut">Loading campaigns…</div>';
+  var sources = $('marketingSources'), list = $('campaignList'), end = today(), start = addDays(end, -14);
+  if (isOwner()) campaignForm({});
+  fetchRange(start,end).then(function(rows){
+    var totals = stats(rows), unknown = totals.src.Unknown;
+    var count = unknown ? unknown.n : 0;
+    sources.textContent = 'Unknown source: ' + (totals.n ? pct(count, totals.n) + '%' : '—') + ' (' + count + ' of ' + totals.n + ' customers) · ' + start + ' to ' + end;
+  }).catch(function(err){ sources.textContent = err.message; });
+  fetchCampaigns().then(function(campaigns){
+    var jobs = campaigns.map(function(campaign){
+      var to = campaign.end < end ? campaign.end : end;
+      var logs = campaign.start <= to ? fetchRange(campaign.start,to) : Promise.resolve([]);
+      return logs.then(function(rows){
+        return campaignCard(campaign, campaignResults(campaign, rows));
+      }, function(err){ return campaignCard(campaign,null,err.message); });
+    });
+    return Promise.all(jobs);
+  }).then(function(cards){
+    list.className = 'card';
+    list.innerHTML = cards.join('') || '<div class="mut">No campaigns saved yet.</div>';
+  }).catch(function(err){ list.textContent = err.message; });
+}
+function campaignCard(c, results, error){
+  var h = '<div class="tier"><h3>' + esc(c.name) + (c.archived ? ' <span class="tag">Archived</span>' : '') + '</h3>';
+  h += '<div class="mut">' + esc(c.platform) + ' · ' + esc(c.start) + ' to ' + esc(c.end) + '</div>';
+  h += '<div>Spend <b>' + (c.spend == null ? 'Not entered' : rs(c.spend)) + '</b> · Cost per lead <b>' +
+    (c.spend != null && c.leads > 0 ? rs(Math.round(c.spend * 100 / c.leads) / 100) : '—') + '</b></div>';
+  h += '<div class="mut">Reach ' + esc(c.reach == null ? '—' : c.reach) + ' · Clicks ' + esc(c.clicks == null ? '—' : c.clicks) + ' · Messages / leads ' + esc(c.leads == null ? '—' : c.leads) + '</div>';
+  h += '<div class="sec">Reported source (not proven)</div>';
+  if (results) {
+    h += '<div>Matching source during campaign dates: ' + results.source.n + ' customers · ' + rs(results.source.rev) + ' sales</div>';
+    h += '<div>Also tagged with this campaign name: ' + results.tagged.n + ' customers · ' + rs(results.tagged.rev) + ' sales</div>';
+    h += '<div class="mut">Source totals can overlap across campaigns on the same platform.</div>';
+  } else h += '<div class="bad">' + esc(error) + '</div>';
+  if (c.notes) h += '<div class="mut">' + esc(c.notes) + '</div>';
+  if (isOwner()) {
+    h += '<button class="btn sm" data-id="' + esc(c.id) + '" onclick="editCampaign(this.dataset.id)">Edit</button>';
+    if (!c.archived) h += '<button class="btn sm" data-id="' + esc(c.id) + '" onclick="archiveCampaign(this.dataset.id)">Archive</button>';
+  }
+  return h + '</div>';
+}
+function campaignForm(c){
+  var form = $('campaignForm');
+  form.innerHTML = '<h3>' + (c.id ? 'Edit campaign' : 'Add a campaign') + '</h3>' +
+    '<label for="m_name">Campaign name (use this name as the log tag)</label><input id="m_name" value="' + esc(c.name) + '">' +
+    '<label for="m_platform">Platform</label><select id="m_platform">' + CAMPAIGN_PLATFORMS.map(function(platform){
+      return '<option' + (platform === c.platform ? ' selected' : '') + '>' + platform + '</option>';
+    }).join('') + '</select><div class="row"><div><label for="m_start">Start date</label><input id="m_start" type="date" value="' + esc(c.start || today()) + '"></div>' +
+    '<div><label for="m_end">End date</label><input id="m_end" type="date" value="' + esc(c.end || today()) + '"></div></div>' +
+    CAMPAIGN_METRICS.map(function(metric){
+      return '<label for="m_' + metric[0] + '">' + metric[1] + '</label><input id="m_' + metric[0] + '" type="number" min="0" step="' + metric[2] + '" value="' + esc(c[metric[0]]) + '">';
+    }).join('') + '<label for="m_notes">Notes</label><textarea id="m_notes">' + esc(c.notes) + '</textarea>' +
+    '<button class="btn pri" data-id="' + esc(c.id) + '" onclick="saveCampaign(this)">Save campaign</button>' +
+    (c.id ? '<button class="btn sm" onclick="campaignForm({})">Cancel</button>' : '');
+}
+function editCampaign(id){
+  if (!isOwner()) return;
+  var form = $('campaignForm');
+  db.collection('sales_campaigns').doc(id).get().then(function(doc){
+    if ($('campaignForm') !== form || !doc.exists) return;
+    var c = doc.data();
+    c.id = doc.id;
+    campaignForm(c);
+    form.scrollIntoView();
+  }).catch(function(err){ alert(err.message); });
+}
+function saveCampaign(button){
+  if (!isOwner() || button.disabled) return;
+  var c = {name:$('m_name').value.trim(), platform:$('m_platform').value, start:$('m_start').value, end:$('m_end').value, notes:$('m_notes').value.trim()};
+  if (!c.name || !c.start || !c.end || c.start > c.end || CAMPAIGN_PLATFORMS.indexOf(c.platform) < 0) return alert('Enter a name, platform and valid start and end dates.');
+  for (var i = 0; i < CAMPAIGN_METRICS.length; i++) {
+    var key = CAMPAIGN_METRICS[i][0], input = $('m_' + key).value;
+    c[key] = input === '' ? null : +input;
+    if (input !== '' && (!Number.isFinite(c[key]) || c[key] < 0 || (key !== 'spend' && !Number.isSafeInteger(c[key])))) {
+      return alert('Enter non-negative spend and whole counts, or leave blank when unknown.');
+    }
+  }
+  button.disabled = true;
+  var collection = db.collection('sales_campaigns'), id = button.dataset.id;
+  if (!id) c.archived = false;
+  (id ? collection.doc(id).update(c) : collection.add(c)).then(function(){
+    if (TAB === 'marketing') renderMarketing();
+  }).catch(function(err){ alert(err.message); }).then(function(){ button.disabled = false; });
+}
+function archiveCampaign(id){
+  if (!isOwner() || !confirm('Archive this campaign? Its results will remain visible.')) return;
+  db.collection('sales_campaigns').doc(id).update({archived:true}).then(function(){
+    if (TAB === 'marketing') renderMarketing();
+  }).catch(function(err){ alert(err.message); });
 }
 
 /* ===== Lenskart ===== */
