@@ -53,6 +53,13 @@ td,th{padding:7px 4px;border-bottom:1px solid var(--line);text-align:left;vertic
 .sec{margin:14px 0 4px;font-weight:700}
 #login{max-width:360px;margin:60px auto;padding:0 16px}
 .hide{display:none}
+@media print{
+  body.printingReview{background:#fff}
+  .printingReview header,.printingReview nav,.printingReview .reviewControls{display:none!important}
+  .printingReview main{margin:0;padding:0;max-width:none}
+  .printingReview #rep{border:0;padding:0}
+  .printingReview tr{break-inside:avoid}
+}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -918,8 +925,8 @@ function diagnosisHtml(s, ps){
 /* ===== Report ===== */
 function periodRange(p){
   var t = today();
-  if (p === 'last15') return {from: addDays(t, -14), to: t, label: 'Last 15 days'};
-  if (p === 'prev15') return {from: addDays(t, -29), to: addDays(t, -15), label: 'Previous 15 days'};
+  if (p === 'last15') return {from: addDays(t, -15), to: addDays(t, -1), label: 'Last 15 completed days'};
+  if (p === 'prev15') return {from: addDays(t, -30), to: addDays(t, -16), label: 'Previous 15 days'};
   if (p === 'month') return {from: t.slice(0, 8) + '01', to: t, label: 'This month'};
   return {from: addDays(t, -89), to: t, label: 'Last 90 days'};
 }
@@ -940,13 +947,14 @@ function stats(rows){
     if (!Number.isFinite(amount)) amount = 0;
     s.n++;
     if (outcomeKnown) s.known++; else s.excluded++;
-    if (!s.staff[staff]) s.staff[staff] = {n:0,b:0,rev:0};
+    if (!s.staff[staff]) s.staff[staff] = {n:0,known:0,b:0,rev:0};
     s.staff[staff].n++;
-    if (!s.cats[category]) s.cats[category] = {n:0,b:0,rev:0};
+    if (!s.cats[category]) s.cats[category] = {n:0,known:0,b:0,rev:0};
     s.cats[category].n++;
+    if (outcomeKnown) { s.staff[staff].known++; s.cats[category].known++; }
     if (r.lk) { s.lkN++; if (r.bought === true) s.lkB++; }
     var groups = [['src', sourceLabel(r.src)], ['cust', r.cust === 'rep' ? 'Repeat' : (r.cust === 'new' ? 'New' : 'Not recorded')], ['test', r.test === true ? 'Tested here' : (r.test === false ? 'Not tested here' : 'Not recorded')]];
-    for (var g = 0; g < groups.length; g++) { var gk = groups[g][0], gv = groups[g][1]; if (!s[gk][gv]) s[gk][gv] = {n:0,b:0,rev:0}; s[gk][gv].n++; if (r.bought === true) { s[gk][gv].b++; s[gk][gv].rev += amount; } }
+    for (var g = 0; g < groups.length; g++) { var gk = groups[g][0], gv = groups[g][1]; if (!s[gk][gv]) s[gk][gv] = {n:0,known:0,b:0,rev:0}; s[gk][gv].n++; if (r.bought === true) { s[gk][gv].b++; s[gk][gv].rev += amount; } }
     if (r.fu === 'open') s.fuOpen++; else if (r.fu === 'won') s.fuWon++; else if (r.fu === 'lost') s.fuLost++;
     if (r.bought === true) {
       s.b++; s.rev += amount;
@@ -964,12 +972,6 @@ function stats(rows){
   s.avg = s.b ? Math.round(s.rev / s.b) : 0;
   return s;
 }
-function delta(cur, prev, money){
-  if (prev == null) return '';
-  var d = cur - prev;
-  if (!d) return ' <span class="mut">(same)</span>';
-  return ' <span class="' + (d > 0 ? 'ok' : 'bad') + '">' + (d > 0 ? '▲' : '▼') + (money ? rs(Math.abs(d)) : Math.abs(d)) + '</span>';
-}
 function bars(obj, total){
   var keys = Object.keys(obj).sort(function(a, b){ return obj[b] - obj[a]; });
   if (!keys.length) return '<div class="mut">None</div>';
@@ -980,68 +982,102 @@ function bars(obj, total){
   return h;
 }
 var LAST_ROWS = [], LAST_STATS = null, LAST_RANGE = null;
-function renderReport(){
-  var h = '<div style="margin-bottom:6px">';
-  var ps = [['last15','Last 15 days'],['prev15','Previous 15'],['month','This month'],['90','Last 90 days']];
-  for (var i = 0; i < ps.length; i++) h += '<button class="btn sm' + (PERIOD === ps[i][0] ? ' on' : '') + '" onclick="PERIOD=\'' + ps[i][0] + '\';renderReport()">' + ps[i][1] + '</button>';
-  h += '</div><div id="rep" class="card mut">Loading…</div>' + changesBlockHtml();
-  $('view').innerHTML = h;
-  var rg = periodRange(PERIOD);
-  var cmp = PERIOD === 'last15' ? periodRange('prev15') : null;
-  var p1 = fetchRange(rg.from, rg.to);
-  var p2 = cmp ? fetchRange(cmp.from, cmp.to) : Promise.resolve(null);
-  var report = $('rep');
-  var month = monthKey(rg.to), target = CFG.targets && CFG.targets[month];
-  var p3 = cmp && target ? fetchRange(month + '-01', rg.to).then(stats) : Promise.resolve(null);
-  Promise.all([p1, p2, p3]).then(function(res){
-    if ($('rep') !== report) return;
-    var s = stats(res[0]), ps = res[1] ? stats(res[1]) : null;
-    LAST_ROWS = res[0]; LAST_STATS = s; LAST_RANGE = rg;
-    var h2 = '<h2>' + esc(rg.label) + '</h2><div class="mut">' + rg.from + ' to ' + rg.to + (ps ? ' · arrows compare with the previous 15 days' : '') + '</div>';
-    if (cmp) {
-      h2 += '<div class="say"><b>Next team review: ' + addDays(rg.to, 15) + ' if you review today</b><br>Pick one change to test, write down the expected result below, then record Keep, Fix or Stop at the next review.</div>';
-      if (res[2]) {
-        var monthly = res[2], expected = Math.round(target.sales * paceShare(+rg.to.slice(8), daysInMonth(month)));
-        h2 += '<div class="note"><b>' + monthLabel(month) + ' target</b><br>Sales ' + rs(monthly.rev) + ' of ' + rs(target.sales) + ' · ' + rs(Math.max(0, target.sales - monthly.rev)) + ' still needed.<br>' + (monthly.rev >= expected ? 'On pace' : 'Behind pace by ' + rs(expected - monthly.rev)) + ' · Orders ' + monthly.b + ' of ' + (target.orders || '—') + '</div>';
-      } else h2 += '<div class="mut">Set this month’s sales and order goals in Target to see progress here.</div>';
+function reviewMetrics(s){
+  return [rs(s.rev), s.b, s.n, s.known ? s.conv + '% (' + s.b + '/' + s.known + ')' : '— (0 known)',
+    s.b ? rs(Math.round(s.rev * 100 / s.b) / 100) : '—'];
+}
+function reviewBreakdown(title, current, previous, label, currentTotal, previousTotal){
+  var keys = Object.keys(Object.assign(Object.create(null), current, previous));
+  keys.sort(function(a,b){ return (current[b] ? current[b].n : 0) - (current[a] ? current[a].n : 0) || a.localeCompare(b); });
+  var h = '<h3 class="sec">' + title + '</h3><table><tr><th></th><th>Selected</th>' + (previousTotal != null ? '<th>Previous</th>' : '') + '</tr>';
+  function cell(group, total){
+    group = group || {n:0,b:0,rev:0};
+    return '<td>' + group.n + ' customers' + (total ? ' (' + pct(group.n,total) + '%)' : '') + '<br>' + group.b + ' bills · ' + rs(group.rev) + '</td>';
+  }
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    h += '<tr><th scope="row">' + esc(label(key)) + '</th>' + cell(current[key], currentTotal) +
+      (previousTotal != null ? cell(previous[key], previousTotal) : '') + '</tr>';
+  }
+  return keys.length ? h + '</table>' : '<h3 class="sec">' + title + '</h3><p class="mut">No records for these dates.</p>';
+}
+function reviewGaps(el, s, ps, rg, cmp){
+  var unknown = s.src.Unknown ? s.src.Unknown.n : 0;
+  var prevUnknown = ps && ps.src.Unknown ? ps.src.Unknown.n : 0;
+  el.innerHTML = '<h3>Data gaps</h3><div>Selected: ' + s.excluded + ' unknown outcomes · ' + unknown + ' unknown sources</div>' +
+    (cmp ? '<div>Previous: ' + ps.excluded + ' unknown outcomes · ' + prevUnknown + ' unknown sources</div>' : '') +
+    '<div id="reviewSpend">Checking campaign spend…</div><div id="reviewOffers">Checking Lenskart offers…</div>';
+  var spend = $('reviewSpend'), offers = $('reviewOffers');
+  fetchCampaigns().then(function(campaigns){
+    function missingIn(period){
+      return campaigns.filter(function(c){ return c.spend == null && c.start <= period.to && c.end >= period.from; }).length;
     }
-    h2 += '<div class="kpi" style="margin-top:10px">';
-    h2 += '<div>Customers<b>' + s.n + delta(s.n, ps && ps.n) + '</b></div>';
-    h2 += '<div>Bought<b>' + s.b + delta(s.b, ps && ps.b) + '</b></div>';
-    h2 += '<div>Conversion<b>' + s.conv + '%' + delta(s.conv, ps && ps.conv) + '</b></div>';
-    h2 += '<div>Avg bill<b>' + rs(s.avg) + delta(s.avg, ps && ps.avg, true) + '</b></div>';
-    h2 += '<div>Sales<b>' + rs(s.rev) + delta(s.rev, ps && ps.rev, true) + '</b></div>';
-    h2 += '<div>Compared Lenskart<b>' + s.lkN + '</b><span class="mut">' + s.lkB + ' of them bought (' + pct(s.lkB, s.lkN) + '%)</span></div>';
-    h2 += '<div>With add-on<b>' + pct(s.addon, s.b) + '%</b><span class="mut">of sales</span></div>';
-    h2 += '<div>Attachment frames<b>' + pct(s.att, s.b) + '%</b><span class="mut">of sales</span></div>';
-    h2 += '</div>';
+    spend.textContent = 'Campaigns missing spend: ' + missingIn(rg) + ' selected' + (cmp ? ' · ' + missingIn(cmp) + ' previous' : '');
+  }).catch(function(err){ spend.textContent = 'Campaign spend unavailable: ' + err.message; });
+  db.collection('sales_competitor').where('date','<',addDays(today(),-15)).get().then(function(snap){
+    offers.textContent = 'Lenskart offers due for recheck now: ' + snap.size;
+  }).catch(function(err){ offers.textContent = 'Lenskart recheck count unavailable: ' + err.message; });
+}
+function renderReport(){
+  var h = '<div class="reviewControls">';
+  var periods = [['last15','15-day review'],['prev15','Previous 15 days'],['month','This month'],['90','Last 90 days']];
+  for (var i = 0; i < periods.length; i++) h += '<button class="btn sm' + (PERIOD === periods[i][0] ? ' on' : '') + '" onclick="PERIOD=\'' + periods[i][0] + '\';renderReport()">' + periods[i][1] + '</button>';
+  h += '</div><div id="rep" class="card mut">Loading…</div><div class="reviewControls">' + changesBlockHtml() + '</div>';
+  $('view').innerHTML = h;
+  var rg = periodRange(PERIOD), cmp = PERIOD === 'last15' ? periodRange('prev15') : null;
+  var report = $('rep');
+  loadChanges();
+  Promise.all([fetchRange(rg.from,rg.to), cmp ? fetchRange(cmp.from,cmp.to) : Promise.resolve(null)]).then(function(res){
+    if ($('rep') !== report) return;
+    var s = stats(res[0]), ps = cmp ? stats(res[1]) : null;
+    LAST_ROWS = res[0]; LAST_STATS = s; LAST_RANGE = rg;
+    var h2 = '<h2>Eyeland · ' + esc(rg.label) + '</h2>';
+    if (s.n < 20 || (ps && ps.n < 20)) h2 += '<div class="note"><b>Early signal</b> · At least one displayed period has fewer than 20 customers.</div>';
+    var labels = ['Net sales','Bills','Customers','Conversion (bought / known outcomes)','Average bill'];
+    var current = reviewMetrics(s), previous = ps ? reviewMetrics(ps) : [];
+    h2 += '<table><tr><th>Measure</th><th>Selected' + rangeNote(rg) + '</th>' + (cmp ? '<th>Previous' + rangeNote(cmp) + '</th>' : '') + '</tr>';
+    for (var j = 0; j < labels.length; j++) {
+      h2 += '<tr><th scope="row">' + labels[j] + '</th><td>' + current[j] + '</td>' + (cmp ? '<td>' + previous[j] + '</td>' : '') + '</tr>';
+    }
+    h2 += '</table>' + reviewBreakdown('Category mix',s.cats,ps && ps.cats,function(key){ return CATS[key] || key; },s.n,ps && ps.n);
+    h2 += reviewBreakdown('Reported source (not proven)',s.src,ps && ps.src,function(key){ return key; },s.n,ps && ps.n);
+    h2 += '<div id="reviewGaps" class="tier"></div>';
+    if (cmp) h2 += '<div class="mut">If you review today, the next review is ' + addDays(today(),15) + '.</div>';
+    h2 += '<details class="reviewControls"><summary>More sales details</summary>' + reviewDetails(s,ps) + '</details>';
+    h2 += '<div class="reviewControls" style="margin-top:14px"><button class="btn pri" onclick="printReview()">Print / Save as PDF</button> <button class="btn sm" onclick="copyReview()">Copy review data</button></div>';
+    report.className = 'card';
+    report.innerHTML = h2;
+    reviewGaps($('reviewGaps'),s,ps,rg,cmp);
+  }).catch(function(err){ report.innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+}
+function printReview(){
+  document.body.classList.add('printingReview');
+  try { window.print(); } finally { document.body.classList.remove('printingReview'); }
+}
+function reviewDetails(s, ps){
+  var h2 = diagnosisHtml(s, ps);
     h2 += '<div class="sec">By staff</div><table><tr><th>Staff</th><th>Customers</th><th>Bought</th><th>Conv.</th><th>Avg bill</th></tr>';
-    for (var k in s.staff) { var x = s.staff[k]; h2 += '<tr><td>' + esc(k) + '</td><td>' + x.n + '</td><td>' + x.b + '</td><td>' + pct(x.b, x.n) + '%</td><td>' + rs(x.b ? Math.round(x.rev / x.b) : 0) + '</td></tr>'; }
+    for (var k in s.staff) { var x = s.staff[k]; h2 += '<tr><td>' + esc(k) + '</td><td>' + x.n + '</td><td>' + x.b + '</td><td>' + pct(x.b, x.known) + '%</td><td>' + rs(x.b ? Math.round(x.rev / x.b) : 0) + '</td></tr>'; }
     h2 += '</table>';
     h2 += '<div class="sec">By product type</div><table><tr><th>Type</th><th>Customers</th><th>Bought</th><th>Conv.</th></tr>';
-    for (var c in s.cats) h2 += '<tr><td>' + esc(CATS[c] || c) + '</td><td>' + s.cats[c].n + '</td><td>' + s.cats[c].b + '</td><td>' + pct(s.cats[c].b, s.cats[c].n) + '%</td></tr>';
+    for (var c in s.cats) h2 += '<tr><td>' + esc(CATS[c] || c) + '</td><td>' + s.cats[c].n + '</td><td>' + s.cats[c].b + '</td><td>' + pct(s.cats[c].b, s.cats[c].known) + '%</td></tr>';
     h2 += '</table>';
-    h2 += groupTable('Where customers came from', s.src);
     h2 += groupTable('New vs repeat', s.cust);
     h2 += groupTable('Eye test here vs outside', s.test);
     h2 += '<div class="sec">Follow-ups</div><div class="mut">Won back ' + s.fuWon + ' · lost ' + s.fuLost + ' · still open ' + s.fuOpen + '</div>';
     h2 += '<div class="sec">Why customers did not buy</div>' + bars(s.reasons, s.known - s.b);
     h2 += '<div class="sec">What sold</div>' + bars(s.tiers, s.b);
-    h2 += '<div style="margin-top:14px"><button class="btn pri" onclick="copyReview()">Copy data for 15-day review</button></div>';
-    $('rep').className = 'card';
-    $('rep').innerHTML = diagnosisHtml(s, ps) + h2;
-    loadChanges();
-  }).catch(function(err){ if ($('rep') === report) report.innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+  return h2;
 }
 function copyReview(){
   var s = LAST_STATS, rg = LAST_RANGE;
   var t = 'EYELAND SALES DATA — ' + rg.label + ' (' + rg.from + ' to ' + rg.to + ')\n';
-  t += 'Customers ' + s.n + ', bought ' + s.b + ', conversion ' + s.conv + '%, sales ' + s.rev + ', avg bill ' + s.avg + '\n';
+  t += 'Customers ' + s.n + ', bought ' + s.b + ', conversion ' + (s.known ? s.conv + '%' : '—') + ', excluded ' + s.excluded + ', sales ' + s.rev + ', avg bill ' + s.avg + '\n';
   t += 'Compared Lenskart ' + s.lkN + ' (bought ' + s.lkB + '), add-on sales ' + s.addon + ', attachment-frame sales ' + s.att + '\n\n';
-  t += 'date,staff,wanted,frame,lens,pairs,addons,bought,amount,reason,lenskart,needs,customer,source,eyetest,followup\n';
+  t += 'date,staff,wanted,frame,lens,pairs,addons,bought,amount,reason,lenskart,needs,customer,source,campaign,eyetest,followup\n';
   for (var i = 0; i < LAST_ROWS.length; i++) {
     var r = LAST_ROWS[i];
-    t += [r.date, staffLabel(r.staff), r.cat, r.frame, '"' + (r.tierName || '') + '"', r.pairs, (r.addons || []).join('+'), r.bought ? 'Y' : 'N', r.amount || 0, '"' + (r.reason || '') + '"', r.lk ? 'Y' : 'N', (r.need || []).join('+'), r.cust || '', r.src || '', r.test ? 'Y' : 'N', r.fu || ''].join(',') + '\n';
+    t += [r.date, staffLabel(r.staff), r.cat, r.frame, '"' + (r.tierName || '') + '"', r.pairs, (r.addons || []).join('+'), r.bought === true ? 'Y' : (r.bought === false ? 'N' : ''), r.amount || 0, '"' + (r.reason || '') + '"', r.lk ? 'Y' : 'N', (r.need || []).join('+'), r.cust || '', sourceLabel(r.src), '"' + String(r.campaignTag || '').replace(/"/g, '""') + '"', r.test ? 'Y' : 'N', r.fu || ''].join(',') + '\n';
   }
   t += '\nCURRENT PRICE LIST (updated ' + CFG.updated + ')\n';
   for (var j = 0; j < CFG.sv.length; j++) { var a = CFG.sv[j]; t += 'SV ' + a.id + ' ' + a.name + ': ' + a.price + (a.priceAtt != null ? ' / att ' + a.priceAtt : '') + '\n'; }
@@ -1324,51 +1360,70 @@ function saveLk(){
 function delDoc(col, id, after){ if (!confirm('Delete?')) return; db.collection(col).doc(id).delete().then(after); }
 
 /* ===== Changes ===== */
+var DECISION_STATUSES = ['Planned','Keep','Fix','Stop','Inconclusive'];
+var DECISION_OWNERS = ['Owner'].concat(STAFF_LABELS);
 var CH_TYPES = ['Offer','Price list','Signage','Product placement','Staff pitch','Other'];
 function changesBlockHtml(){
   var own = isOwner();
-  var h = '<div class="card"><h2>Changes and verdicts</h2><div class="mut">Every change to offers, signage, placement or pitch. At each review, give each one a verdict: Keep, Fix or Stop. One main change per 15 days.</div>';
+  var h = '<div class="card"><h2>Decision log</h2><div class="mut">Add what you plan to change. At the next review, mark the previous decision and record what happened.</div>';
   if (own) {
     h += '<div class="tier"><h3>Add a change</h3><div class="row"><div><label>Date</label><input id="c_date" type="date" value="' + today() + '"></div><div><label>Type</label><select id="c_type">';
     for (var i = 0; i < CH_TYPES.length; i++) h += '<option>' + CH_TYPES[i] + '</option>';
-    h += '</select></div></div><label>What changed (where, exact wording)</label><textarea id="c_what" style="min-height:70px"></textarea>';
-    h += '<label>Why (what the data showed)</label><input id="c_why"><label>Expected result</label><input id="c_exp" placeholder="e.g. conversion from 55% to 65%"><button class="btn pri" onclick="saveChange()">Save change</button></div>';
+    h += '</select></div></div><label>What we will change</label><textarea id="c_what" style="min-height:70px"></textarea>';
+    h += '<label>Why (what the data showed)</label><input id="c_why"><label>Expected result</label><input id="c_exp" placeholder="e.g. conversion from 55% to 65%"><label for="c_owner">Who is responsible?</label><select id="c_owner">' + DECISION_OWNERS.map(function(owner){ return '<option>' + owner + '</option>'; }).join('') + '</select><button class="btn pri" onclick="saveChange(this)">Save as Planned</button></div>';
   }
   return h + '<div id="chList"><div class="mut">Loading…</div></div></div>';
 }
 function loadChanges(){
-  var own = isOwner();
-  db.collection('sales_changes').orderBy('ts', 'desc').limit(60).get().then(function(snap){
+  var own = isOwner(), list = $('chList');
+  db.collection('sales_changes').orderBy('ts', 'desc').get().then(function(snap){
     var out = '';
     snap.forEach(function(d){
-      var x = d.data(), v = x.verdict || '';
-      out += '<div class="tier"><span class="tag">' + esc(x.type) + '</span> <span class="mut">' + esc(x.date) + ' · ' + daysAgo(x.date) + ' days ago</span>';
-      if (!v && x.date) {
+      var x = d.data(), v = x.verdict || 'Planned';
+      out += '<div class="tier"><span class="tag">' + esc(x.type) + '</span> <span class="mut">' + esc(x.date) + '</span>';
+      if (v === 'Planned' && x.date) {
         var due = addDays(x.date, 15);
         out += ' <span class="tag' + (due <= today() ? ' no' : '') + '">' + (due <= today() ? 'Review due' : 'Review from ' + due) + '</span>';
       }
-      if (v) out += ' <span class="tag ' + (v === 'Stop' ? 'no' : '') + '">' + esc(v) + '</span>';
+      out += ' <span class="tag ' + (v === 'Stop' ? 'no' : '') + '">' + esc(v) + '</span>';
       out += '<div><b>' + esc(x.what) + '</b></div>';
+      if (x.decisionOwner) out += '<div class="mut">Responsible: ' + esc(x.decisionOwner) + '</div>';
+      if (x.reviewed) out += '<div class="mut">Last marked: ' + esc(x.reviewed) + '</div>';
       if (x.why) out += '<div class="mut">Why: ' + esc(x.why) + '</div>';
       if (x.exp) out += '<div class="mut">Expected: ' + esc(x.exp) + '</div>';
       if (own) {
-        out += '<label>Result</label><input id="o_' + d.id + '" value="' + esc(x.outcome || '') + '"><div>';
-        var vs = ['Keep','Fix','Stop'];
-        for (var i = 0; i < vs.length; i++) out += '<button class="btn sm' + (v === vs[i] ? ' on' : '') + '" onclick="saveVerdict(\'' + d.id + '\',\'' + vs[i] + '\')">' + vs[i] + '</button>';
-        out += '<button class="btn sm del" onclick="delDoc(\'sales_changes\',\'' + d.id + '\',renderReport)">Delete</button></div>';
+        out += '<label>Result</label><input id="o_' + esc(d.id) + '" value="' + esc(x.outcome || '') + '"><div>';
+        for (var i = 0; i < DECISION_STATUSES.length; i++) {
+          var status = DECISION_STATUSES[i];
+          out += '<button class="btn sm' + (v === status ? ' on' : '') + '" data-id="' + esc(d.id) + '" data-status="' + status + '" onclick="saveVerdict(this)">' + status + '</button>';
+        }
+        out += '</div>';
       } else if (x.outcome) out += '<div class="say">Result: ' + esc(x.outcome) + '</div>';
       out += '</div>';
     });
-    $('chList').innerHTML = out || '<div class="mut">No changes recorded yet.</div>';
-  }).catch(function(err){ $('chList').innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
+    list.innerHTML = out || '<div class="mut">No changes recorded yet.</div>';
+  }).catch(function(err){ list.innerHTML = '<span class="bad">' + esc(err.message) + '</span>'; });
 }
-function saveVerdict(id, v){
-  db.collection('sales_changes').doc(id).update({verdict: v, outcome: $('o_' + id).value.trim(), reviewed: today()}).then(loadChanges).catch(function(err){ alert(err.message); });
+function saveVerdict(button){
+  var id = button.dataset.id, status = button.dataset.status;
+  if (!isOwner() || button.disabled || DECISION_STATUSES.indexOf(status) < 0) return;
+  var list = $('chList');
+  button.disabled = true;
+  return db.collection('sales_changes').doc(id).update({verdict:status, outcome:$('o_' + id).value.trim(), reviewed:today()}).then(function(){
+    if ($('chList') === list) loadChanges();
+  }).catch(function(err){ alert(err.message); }).then(function(){ button.disabled = false; });
 }
-function saveChange(){
-  var rec = {date: $('c_date').value || today(), type: $('c_type').value, what: $('c_what').value.trim(), why: $('c_why').value.trim(), exp: $('c_exp').value.trim(), outcome: '', verdict: '', ts: Date.now(), by: USER.email};
-  if (!rec.what) return alert('Describe what changed.');
-  db.collection('sales_changes').add(rec).then(renderReport).catch(function(err){ alert(err.message); });
+function saveChange(button){
+  if (!isOwner() || button.disabled) return;
+  var rec = {date:$('c_date').value || today(), type:$('c_type').value, what:$('c_what').value.trim(), why:$('c_why').value.trim(), exp:$('c_exp').value.trim(), decisionOwner:$('c_owner').value, outcome:'', verdict:'Planned', ts:Date.now(), by:USER.email};
+  if (!rec.what || !rec.why || !rec.exp || DECISION_OWNERS.indexOf(rec.decisionOwner) < 0) return alert('Enter the change, reason, expected result and responsible person.');
+  var list = $('chList');
+  button.disabled = true;
+  return db.collection('sales_changes').add(rec).then(function(){
+    if ($('chList') !== list) return;
+    $('c_what').value = $('c_why').value = $('c_exp').value = '';
+    loadChanges();
+  }).catch(function(err){ alert(err.message); }).then(function(){ button.disabled = false; });
 }
 </script>
 </body>
